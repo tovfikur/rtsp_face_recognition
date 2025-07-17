@@ -1,0 +1,15 @@
+version: "3.8"
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DEV=1
+    volumes:
+      - .:/app
+      - logs:/tmp/logs
+    restart: unless-stopped
+
+volumes:
+  logs:

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>WebSocket Test Client</title>
+  </head>
+  <body>
+    <h1>WebSocket Test Client</h1>
+    <p>
+      Enter your JWT token and click "Connect" to test the WebSocket endpoint.
+    </p>
+    <label for="token">JWT Token:</label>
+    <input
+      type="text"
+      id="token"
+      placeholder="Enter your JWT token"
+      size="50"
+    />
+    <br /><br />
+    <button onclick="connectWebSocket()">Connect</button>
+    <button onclick="disconnectWebSocket()">Disconnect</button>
+    <br /><br />
+    <textarea id="messages" cols="100" rows="20" readonly></textarea>
+    <br /><br />
+    <input type="file" id="imageFile" accept="image/*" />
+    <button onclick="sendImage()">Send Image</button>
+
+    <script>
+      var ws;
+      function connectWebSocket() {
+        var token = document.getElementById("token").value;
+        var wsUrl =
+          "ws://" + window.location.host + "/ws/detection?token=" + token;
+        ws = new WebSocket(wsUrl);
+        ws.onopen = function () {
+          document.getElementById("messages").value += "Connected\\n";
+        };
+        ws.onmessage = function (event) {
+          document.getElementById("messages").value +=
+            "Received: " + event.data + "\\n";
+        };
+        ws.onclose = function () {
+          document.getElementById("messages").value += "Disconnected\\n";
+        };
+        ws.onerror = function (event) {
+          document.getElementById("messages").value +=
+            "Error: " + event.data + "\\n";
+        };
+      }
+      function disconnectWebSocket() {
+        if (ws) {
+          ws.close();
+        }
+      }
+      function sendImage() {
+        var fileInput = document.getElementById("imageFile");
+        var file = fileInput.files[0];
+        if (file) {
+          var reader = new FileReader();
+          reader.onload = function (event) {
+            // Remove the data URL prefix so only the base64 data is sent.
+            var base64Data = event.target.result.split(",")[1];
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(base64Data);
+            } else {
+              alert("WebSocket is not connected.");
+            }
+          };
+          reader.readAsDataURL(file);
+        } else {
+          alert("No image selected.");
+        }
+      }
+    </script>
+  </body>
+</html>

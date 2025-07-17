@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RTSP Stream Management</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .container {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+      }
+      .form-group {
+        margin-bottom: 15px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      input[type="text"],
+      input[type="url"] {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        box-sizing: border-box;
+      }
+      button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-right: 10px;
+      }
+      button:hover {
+        opacity: 0.9;
+      }
+      button.danger {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+      }
+      button.success {
+        background: linear-gradient(135deg, #00b894 0%, #00a085 100%);
+      }
+      .stream-item {
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 10px;
+        background: #f9f9f9;
+      }
+      .stream-info {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .stream-details {
+        flex: 1;
+        min-width: 300px;
+      }
+      .stream-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .status {
+        padding: 5px 10px;
+        border-radius: 15px;
+        font-size: 12px;
+        font-weight: bold;
+        margin-left: 10px;
+      }
+      .status.active {
+        background: #d1edff;
+        color: #0066cc;
+      }
+      .status.inactive {
+        background: #ffe6e6;
+        color: #cc0000;
+      }
+      .nav {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      .nav a {
+        color: #667eea;
+        text-decoration: none;
+        margin: 0 15px;
+        font-weight: bold;
+      }
+      .nav a:hover {
+        text-decoration: underline;
+      }
+      .error {
+        color: #ff0000;
+        background: #ffe6e6;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+      }
+      .success {
+        color: #008000;
+        background: #e6ffe6;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>RTSP Stream Management</h1>
+      <p>Manage your RTSP camera streams for face detection</p>
+    </div>
+
+    <div class="nav">
+      <a href="/">Dashboard</a>
+      <a href="/rtsp/manage">RTSP Streams</a>
+      <a href="/logout">Logout</a>
+    </div>
+
+    <div class="container">
+      <h2>Add New RTSP Stream</h2>
+      <form id="addStreamForm">
+        <div class="form-group">
+          <label for="streamName">Stream Name:</label>
+          <input
+            type="text"
+            id="streamName"
+            name="name"
+            required
+            placeholder="e.g., Front Door Camera"
+          />
+        </div>
+        <div class="form-group">
+          <label for="rtspUrl">RTSP URL:</label>
+          <input
+            type="url"
+            id="rtspUrl"
+            name="rtsp_url"
+            required
+            placeholder="rtsp://username:password@ip:port/stream"
+          />
+        </div>
+        <button type="submit">Add Stream</button>
+      </form>
+    </div>
+
+    <div class="container">
+      <h2>Configured RTSP Streams</h2>
+      <div id="streamsList">
+        <p>Loading streams...</p>
+      </div>
+    </div>
+
+    <div id="message"></div>
+
+    <script>
+      const API_BASE = "";
+
+      // Get auth token from cookie
+      function getToken() {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; access_token=`);
+        if (parts.length === 2) return parts.pop().split(";").shift();
+        return null;
+      }
+
+      // Make authenticated API calls
+      async function apiCall(url, options = {}) {
+        const access_token = getToken();
+        if (!access_token) {
+          window.location.href = "/login";
+          return;
+        }
+
+        const headers = {
+          Authorization: `Bearer ${access_token}`,
+          "Content-Type": "application/json",
+          ...options.headers,
+        };
+
+        try {
+          const response = await fetch(url, { ...options, headers });
+          if (response.status === 401) {
+            window.location.href = "/login";
+            return;
+          }
+          return response;
+        } catch (error) {
+          showMessage("Network error: " + error.message, "error");
+          return null;
+        }
+      }
+
+      // Show messages
+      function showMessage(message, type = "success") {
+        const messageEl = document.getElementById("message");
+        messageEl.innerHTML = `<div class="${type}">${message}</div>`;
+        setTimeout(() => {
+          messageEl.innerHTML = "";
+        }, 5000);
+      }
+
+      // Load streams
+      async function loadStreams() {
+        const response = await apiCall("/rtsp/streams");
+        if (!response) return;
+
+        const streams = await response.json();
+        const streamsList = document.getElementById("streamsList");
+
+        if (streams.length === 0) {
+          streamsList.innerHTML = "<p>No RTSP streams configured.</p>";
+          return;
+        }
+
+        streamsList.innerHTML = streams
+          .map(
+            (stream) => `
+                <div class="stream-item">
+                    <div class="stream-info">
+                        <div class="stream-details">
+                            <h3>${stream.name} 
+                                <span class="status ${
+                                  stream.is_active ? "active" : "inactive"
+                                }">
+                                    ${stream.is_active ? "ACTIVE" : "INACTIVE"}
+                                </span>
+                            </h3>
+                            <p><strong>URL:</strong> ${stream.rtsp_url}</p>
+                            <p><strong>Created:</strong> ${new Date(
+                              stream.created_at
+                            ).toLocaleString()}</p>
+                            ${
+                              stream.last_detection
+                                ? `<p><strong>Last Detection:</strong> ${new Date(
+                                    stream.last_detection
+                                  ).toLocaleString()}</p>`
+                                : ""
+                            }
+                        </div>
+                        <div class="stream-actions">
+                            ${
+                              stream.is_active
+                                ? `<button class="danger" onclick="stopStream(${stream.id})">Stop</button>`
+                                : `<button class="success" onclick="startStream(${stream.id})">Start</button>`
+                            }
+                            <button class="danger" onclick="deleteStream(${
+                              stream.id
+                            }, '${stream.name}')">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            `
+          )
+          .join("");
+      }
+
+      // Add stream
+      document
+        .getElementById("addStreamForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const formData = new FormData(e.target);
+          const data = Object.fromEntries(formData);
+
+          const response = await apiCall("/rtsp/streams", {
+            method: "POST",
+            body: JSON.stringify(data),
+          });
+
+          if (response && response.ok) {
+            showMessage("Stream added successfully!");
+            e.target.reset();
+            loadStreams();
+          } else {
+            const error = await response.json();
+            showMessage(
+              "Error adding stream: " + (error.detail || "Unknown error"),
+              "error"
+            );
+          }
+        });
+
+      // Start stream
+      async function startStream(streamId) {
+        const response = await apiCall(`/rtsp/streams/${streamId}/start`, {
+          method: "POST",
+        });
+
+        if (response && response.ok) {
+          const result = await response.json();
+          showMessage(result.message);
+          loadStreams();
+        } else {
+          const error = await response.json();
+          showMessage(
+            "Error starting stream: " + (error.detail || "Unknown error"),
+            "error"
+          );
+        }
+      }
+
+      // Stop stream
+      async function stopStream(streamId) {
+        const response = await apiCall(`/rtsp/streams/${streamId}/stop`, {
+          method: "POST",
+        });
+
+        if (response && response.ok) {
+          const result = await response.json();
+          showMessage(result.message);
+          loadStreams();
+        } else {
+          const error = await response.json();
+          showMessage(
+            "Error stopping stream: " + (error.detail || "Unknown error"),
+            "error"
+          );
+        }
+      }
+
+      // Delete stream
+      async function deleteStream(streamId, streamName) {
+        if (!confirm(`Are you sure you want to delete "${streamName}"?`)) {
+          return;
+        }
+
+        const response = await apiCall(`/rtsp/streams/${streamId}`, {
+          method: "DELETE",
+        });
+
+        if (response && response.ok) {
+          const result = await response.json();
+          showMessage(result.message);
+          loadStreams();
+        } else {
+          const error = await response.json();
+          showMessage(
+            "Error deleting stream: " + (error.detail || "Unknown error"),
+            "error"
+          );
+        }
+      }
+
+      // Load streams on page load
+      loadStreams();
+    </script>
+  </body>
+</html>

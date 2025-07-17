@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live Video Feed</title>
+    <!-- Bootstrap CSS -->
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <!-- Font Awesome for icons -->
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        background-color: #f8f9fa;
+      }
+      .hero-section {
+        background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+        color: white;
+        padding: 2rem 0;
+        margin-bottom: 2rem;
+        border-radius: 0 0 20px 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+      .video-container {
+        background-color: white;
+        border-radius: 15px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        padding: 25px;
+        margin-bottom: 2rem;
+        transition: all 0.3s ease;
+      }
+      .video-container:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+      }
+      #video {
+        width: 100%;
+        border-radius: 10px;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+      }
+      .controls {
+        background-color: white;
+        border-radius: 15px;
+        padding: 0.25rem;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      }
+      .btn-start {
+        background-color: #2575fc;
+        border-color: #2575fc;
+      }
+      .btn-start:hover {
+        background-color: #1a68e5;
+        border-color: #1a68e5;
+      }
+      .btn-stop {
+        background-color: #dc3545;
+        border-color: #dc3545;
+      }
+      .status-card {
+        background-color: white;
+        border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+      }
+      .status-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+      }
+      .status-title {
+        color: #6a11cb;
+        margin-bottom: 1rem;
+      }
+      #status {
+        font-size: 18px;
+        color: #444;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Hero Section -->
+    <div class="hero-section">
+      <div class="container">
+        <div class="row justify-content-center">
+          <div class="col-md-10 text-center">
+            <h1 class="display-4">
+              <i class="fas fa-video me-2"></i>Live Video Feed
+            </h1>
+            <p class="lead">Attendance detection capabilities</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="container">
+      <div class="row justify-content-center">
+        <!-- Video Feed Section -->
+        <div class="col-lg-6">
+          <div class="video-container">
+            <h3 class="mb-3 text-center">
+              <i class="fas fa-camera me-2"></i>Camera Feed
+            </h3>
+            <video id="video" height="360" autoplay></video>
+            <canvas
+              id="canvas"
+              width="320"
+              height="240"
+              style="display: none"
+            ></canvas>
+          </div>
+        </div>
+
+        <!-- Controls Section -->
+        <div class="col-lg-5">
+          <div class="controls mb-4">
+            <div class="card-body">
+              <h3 class="mb-3">
+                <i class="fas fa-cogs me-2"></i>Stream Controls
+              </h3>
+              <div class="input-group mb-3">
+                <span class="input-group-text"><i class="fas fa-key"></i></span>
+                <input
+                  type="text"
+                  class="form-control"
+                  id="token"
+                  placeholder="Enter JWT token"
+                />
+              </div>
+              <div class="d-flex gap-2">
+                <button
+                  class="btn btn-start btn-lg text-white w-50"
+                  onclick="startStream()"
+                >
+                  <i class="fas fa-play me-2"></i>Start Stream
+                </button>
+                <button
+                  class="btn btn-stop btn-lg text-white w-50"
+                  onclick="stopStream()"
+                >
+                  <i class="fas fa-stop me-2"></i>Stop Stream
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Status Section -->
+          <div class="status-card">
+            <h3 class="status-title">
+              <i class="fas fa-chart-line me-2"></i>Detection Status
+            </h3>
+            <div class="alert alert-info">
+              <p id="status" class="mb-0">Waiting to connect...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+      let video = document.getElementById("video");
+      let canvas = document.getElementById("canvas");
+      let context = canvas.getContext("2d");
+      let ws;
+      let streamingInterval;
+      let stream;
+
+      async function startStream() {
+        let token = document.getElementById("token").value;
+        if (!token) {
+          alert("Please enter a JWT token");
+          return;
+        }
+
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          video.srcObject = stream;
+        } catch (error) {
+          alert("Error accessing webcam: " + error);
+          return;
+        }
+
+        let wsUrl =
+          "ws://" + window.location.host + "/ws/detection?token=" + token;
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = function () {
+          document.getElementById("status").innerHTML = "WebSocket connected";
+        };
+
+        ws.onmessage = function (event) {
+          document.getElementById("status").innerHTML =
+            "Detection result: <strong>" + event.data + "</strong>";
+        };
+
+        ws.onclose = function () {
+          document.getElementById("status").innerHTML =
+            "WebSocket disconnected";
+        };
+
+        ws.onerror = function (event) {
+          document.getElementById("status").innerHTML = "WebSocket error";
+        };
+
+        streamingInterval = setInterval(() => {
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          let dataUrl = canvas.toDataURL("image/jpeg", 0.5);
+          let base64Data = dataUrl.split(",")[1];
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(base64Data);
+          }
+        }, 250); // Send a frame every 250ms
+      }
+
+      function stopStream() {
+        if (streamingInterval) {
+          clearInterval(streamingInterval);
+        }
+        if (ws) {
+          ws.close();
+        }
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+        document.getElementById("status").innerHTML = "Stream stopped";
+      }
+    </script>
+  </body>
+</html>

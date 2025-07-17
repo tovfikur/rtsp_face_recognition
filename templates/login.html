@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Face Recognition API - Login</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0 auto;
+        max-width: 500px;
+        padding: 40px;
+        transition: all 0.5s ease;
+      }
+      h1 {
+        color: #333;
+      }
+      .form-group {
+        margin-bottom: 15px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+      }
+      input[type="text"],
+      input[type="password"] {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      button {
+        background-color: #4caf50;
+        color: white;
+        padding: 10px 15px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        width: 100%;
+      }
+      button:hover {
+        background-color: #45a049;
+      }
+      button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+      .error {
+        color: red;
+        margin-top: 15px;
+      }
+      .success-screen {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #4caf50, #45a049);
+        color: white;
+        text-align: center;
+        padding-top: 20%;
+        font-size: 24px;
+        z-index: 1000;
+      }
+      .success-screen.show {
+        display: block;
+        animation: fadeIn 0.5s ease-in;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      .checkmark {
+        font-size: 80px;
+        margin-bottom: 20px;
+        animation: bounce 1s ease-in-out;
+      }
+      @keyframes bounce {
+        0%,
+        20%,
+        60%,
+        100% {
+          transform: translateY(0);
+        }
+        40% {
+          transform: translateY(-20px);
+        }
+        80% {
+          transform: translateY(-10px);
+        }
+      }
+      .loading {
+        display: none;
+        margin-top: 10px;
+      }
+      .spinner {
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid #4caf50;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        animation: spin 1s linear infinite;
+        display: inline-block;
+        margin-right: 10px;
+      }
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Face Recognition API Login</h1>
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required />
+      </div>
+      <div class="form-group">
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required />
+      </div>
+      <button type="submit" id="loginBtn">Login</button>
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        Logging in...
+      </div>
+    </form>
+    <p id="error" class="error"></p>
+
+    <!-- Success Screen -->
+    <div class="success-screen" id="successScreen">
+      <div class="checkmark">✓</div>
+      <h2>Login Successful!</h2>
+      <p>Welcome to Face Recognition API</p>
+      <p>Redirecting...</p>
+    </div>
+
+    <script>
+      // Function to set cookie
+      function setCookie(name, value, days) {
+        const expires = new Date();
+        expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
+        document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
+      }
+
+      // Function to get cookie
+      function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(";").shift();
+        return null;
+      }
+
+      document
+        .getElementById("loginForm")
+        .addEventListener("submit", async function (e) {
+          e.preventDefault();
+
+          const username = document.getElementById("username").value;
+          const password = document.getElementById("password").value;
+          const errorElement = document.getElementById("error");
+          const loginBtn = document.getElementById("loginBtn");
+          const loading = document.getElementById("loading");
+
+          // Clear previous errors
+          errorElement.textContent = "";
+
+          // Show loading state
+          loginBtn.disabled = true;
+          loading.style.display = "block";
+
+          try {
+            // Make login request
+            const response = await fetch("/token", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: `username=${encodeURIComponent(
+                username
+              )}&password=${encodeURIComponent(password)}`,
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+
+              if (data.access_token) {
+                // Set cookie with access token (expires in 7 days)
+                setCookie("access_token", data.access_token, 7);
+                setCookie("token_type", data.token_type, 7);
+
+                // Show success screen
+                document.getElementById("successScreen").classList.add("show");
+
+                // Redirect after 3 seconds
+                setTimeout(() => {
+                  // You can redirect to your main application page here
+                  window.location.href = "/dashboard"; // Change this to your desired redirect URL
+                }, 3000);
+              } else {
+                throw new Error("No access token received");
+              }
+            } else {
+              const errorData = await response.json();
+              throw new Error(errorData.detail || "Login failed");
+            }
+          } catch (error) {
+            console.error("Login error:", error);
+            errorElement.textContent =
+              error.message || "Login failed. Please try again.";
+          } finally {
+            // Hide loading state
+            loginBtn.disabled = false;
+            loading.style.display = "none";
+          }
+        });
+
+      // Function to logout (for testing purposes)
+      function logout() {
+        document.cookie =
+          "access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+        document.cookie =
+          "token_type=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+        location.reload();
+      }
+
+      // Add logout function to window for testing
+      window.logout = logout;
+    </script>
+  </body>
+</html>

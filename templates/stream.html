@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RTSP Stream Player</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.4.10/hls.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+
+      .container {
+        background: white;
+        border-radius: 10px;
+        padding: 30px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      h1 {
+        color: #333;
+        text-align: center;
+        margin-bottom: 30px;
+      }
+
+      .input-group {
+        margin-bottom: 20px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+        color: #555;
+      }
+
+      input[type="text"] {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #ddd;
+        border-radius: 5px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+
+      input[type="text"]:focus {
+        border-color: #4caf50;
+        outline: none;
+      }
+
+      .button-group {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+
+      button {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        transition: background-color 0.3s;
+      }
+
+      .play-btn {
+        background: #4caf50;
+        color: white;
+      }
+
+      .play-btn:hover {
+        background: #45a049;
+      }
+
+      .stop-btn {
+        background: #f44336;
+        color: white;
+      }
+
+      .stop-btn:hover {
+        background: #da190b;
+      }
+
+      .preset-btn {
+        background: #2196f3;
+        color: white;
+        flex: 1;
+      }
+
+      .preset-btn:hover {
+        background: #1976d2;
+      }
+
+      #videoPlayer {
+        width: 100%;
+        max-width: 800px;
+        height: 450px;
+        background: #000;
+        border-radius: 5px;
+        margin: 20px auto;
+        display: block;
+      }
+
+      .status {
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+        font-weight: bold;
+      }
+
+      .status.success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+
+      .status.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+
+      .status.info {
+        background: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+      }
+
+      .note {
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        color: #856404;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 20px 0;
+      }
+
+      .note h3 {
+        margin-top: 0;
+        color: #856404;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>RTSP Stream Player</h1>
+
+      <div class="note">
+        <h3>Important Notes:</h3>
+        <p>
+          <strong>RTSP Limitations:</strong> Browsers cannot directly play RTSP
+          streams due to security restrictions. This player supports:
+        </p>
+        <ul>
+          <li>
+            <strong>HLS streams (.m3u8)</strong> - Most common alternative to
+            RTSP
+          </li>
+          <li><strong>MP4 streams</strong> - Direct HTTP video streams</li>
+          <li>
+            <strong>WebRTC</strong> - For real-time streaming (requires
+            WebRTC-enabled server)
+          </li>
+        </ul>
+        <p>
+          To use RTSP streams, you'll need to convert them to HLS using tools
+          like FFmpeg or use a streaming server that provides HLS endpoints.
+        </p>
+      </div>
+
+      <div class="input-group">
+        <label for="streamUrl">Stream URL:</label>
+        <input
+          type="text"
+          id="streamUrl"
+          placeholder="Enter HLS (.m3u8) or MP4 stream URL"
+        />
+      </div>
+
+      <div class="button-group">
+        <button class="play-btn" onclick="playStream()">Play Stream</button>
+        <button class="stop-btn" onclick="stopStream()">Stop Stream</button>
+      </div>
+
+      <div class="button-group">
+        <button class="preset-btn" onclick="loadPreset('hls')">
+          Load HLS Demo
+        </button>
+        <button class="preset-btn" onclick="loadPreset('mp4')">
+          Load MP4 Demo
+        </button>
+      </div>
+
+      <div id="status"></div>
+
+      <video id="videoPlayer" controls muted>
+        Your browser does not support the video tag.
+      </video>
+
+      <div class="note">
+        <h3>How to Convert RTSP to HLS:</h3>
+        <p>Use FFmpeg to convert RTSP streams to HLS format:</p>
+        <code
+          >ffmpeg -i rtsp://your-rtsp-url -c copy -f hls -hls_time 2
+          -hls_list_size 3 -hls_flags delete_segments output.m3u8</code
+        >
+      </div>
+    </div>
+
+    <script>
+      let hls = null;
+      const video = document.getElementById("videoPlayer");
+      const statusDiv = document.getElementById("status");
+      const urlInput = document.getElementById("streamUrl");
+
+      function showStatus(message, type = "info") {
+        statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+      }
+
+      function loadPreset(type) {
+        if (type === "hls") {
+          // Big Buck Bunny HLS stream for testing
+          urlInput.value = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
+        } else if (type === "mp4") {
+          // Big Buck Bunny MP4 stream for testing
+          urlInput.value =
+            "https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4";
+        }
+      }
+
+      function playStream() {
+        const url = urlInput.value.trim();
+
+        if (!url) {
+          showStatus("Please enter a stream URL", "error");
+          return;
+        }
+
+        stopStream(); // Stop any existing stream
+
+        showStatus("Loading stream...", "info");
+
+        if (url.includes(".m3u8")) {
+          // HLS stream
+          if (Hls.isSupported()) {
+            hls = new Hls({
+              debug: false,
+              enableWorker: true,
+              lowLatencyMode: true,
+              backBufferLength: 90,
+            });
+
+            hls.loadSource(url);
+            hls.attachMedia(video);
+
+            hls.on(Hls.Events.MANIFEST_PARSED, function () {
+              showStatus("Stream loaded successfully!", "success");
+              video.play().catch((e) => {
+                showStatus(
+                  "Autoplay failed. Click play button on video.",
+                  "info"
+                );
+              });
+            });
+
+            hls.on(Hls.Events.ERROR, function (event, data) {
+              console.error("HLS Error:", data);
+              if (data.fatal) {
+                showStatus(
+                  `HLS Error: ${data.type} - ${data.details}`,
+                  "error"
+                );
+              }
+            });
+          } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+            // Safari native HLS support
+            video.src = url;
+            video.addEventListener("loadedmetadata", function () {
+              showStatus("Stream loaded successfully!", "success");
+              video.play().catch((e) => {
+                showStatus(
+                  "Autoplay failed. Click play button on video.",
+                  "info"
+                );
+              });
+            });
+          } else {
+            showStatus("HLS not supported in this browser", "error");
+          }
+        } else {
+          // Regular video stream (MP4, etc.)
+          video.src = url;
+          video.load();
+
+          video.addEventListener("loadedmetadata", function () {
+            showStatus("Stream loaded successfully!", "success");
+            video.play().catch((e) => {
+              showStatus(
+                "Autoplay failed. Click play button on video.",
+                "info"
+              );
+            });
+          });
+
+          video.addEventListener("error", function (e) {
+            showStatus(
+              "Failed to load video stream. Check URL and format.",
+              "error"
+            );
+          });
+        }
+      }
+
+      function stopStream() {
+        if (hls) {
+          hls.destroy();
+          hls = null;
+        }
+
+        video.pause();
+        video.src = "";
+        video.load();
+        showStatus("Stream stopped", "info");
+      }
+
+      // Handle video events
+      video.addEventListener("play", function () {
+        showStatus("Stream playing", "success");
+      });
+
+      video.addEventListener("pause", function () {
+        showStatus("Stream paused", "info");
+      });
+
+      video.addEventListener("waiting", function () {
+        showStatus("Buffering...", "info");
+      });
+
+      video.addEventListener("playing", function () {
+        showStatus("Stream playing", "success");
+      });
+
+      // Allow Enter key to play stream
+      urlInput.addEventListener("keypress", function (e) {
+        if (e.key === "Enter") {
+          playStream();
+        }
+      });
+    </script>
+  </body>
+</html>
