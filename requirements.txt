@@ -1,3 +1,4 @@
+dlib
 fastapi==0.95.1
 uvicorn==0.22.0
 gunicorn==20.1.0
@@ -12,3 +13,8 @@ python-multipart==0.0.5
 Jinja2==3.1.2
 httpx
 uvicorn[standard]
+openface
+filterpy
+scipy
+imutils
+scikit-image

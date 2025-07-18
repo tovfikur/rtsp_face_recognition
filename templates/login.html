@@ -1,240 +1,514 @@
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
     <title>Face Recognition API - Login</title>
     <style>
-      body {
-        font-family: Arial, sans-serif;
-        margin: 0 auto;
-        max-width: 500px;
-        padding: 40px;
-        transition: all 0.5s ease;
-      }
-      h1 {
-        color: #333;
-      }
-      .form-group {
-        margin-bottom: 15px;
-      }
-      label {
-        display: block;
-        margin-bottom: 5px;
-      }
-      input[type="text"],
-      input[type="password"] {
-        width: 100%;
-        padding: 8px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        box-sizing: border-box;
-      }
-      button {
-        background-color: #4caf50;
-        color: white;
-        padding: 10px 15px;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        width: 100%;
-      }
-      button:hover {
-        background-color: #45a049;
-      }
-      button:disabled {
-        background-color: #cccccc;
-        cursor: not-allowed;
-      }
-      .error {
-        color: red;
-        margin-top: 15px;
-      }
-      .success-screen {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(135deg, #4caf50, #45a049);
-        color: white;
-        text-align: center;
-        padding-top: 20%;
-        font-size: 24px;
-        z-index: 1000;
-      }
-      .success-screen.show {
-        display: block;
-        animation: fadeIn 0.5s ease-in;
-      }
-      @keyframes fadeIn {
-        from {
-          opacity: 0;
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0 auto;
+            max-width: 600px;
+            padding: 40px;
+            background: #f5f5f5;
         }
-        to {
-          opacity: 1;
+        .login-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-      }
-      .checkmark {
-        font-size: 80px;
-        margin-bottom: 20px;
-        animation: bounce 1s ease-in-out;
-      }
-      @keyframes bounce {
-        0%,
-        20%,
-        60%,
-        100% {
-          transform: translateY(0);
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
         }
-        40% {
-          transform: translateY(-20px);
+        .form-group {
+            margin-bottom: 20px;
         }
-        80% {
-          transform: translateY(-10px);
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #555;
         }
-      }
-      .loading {
-        display: none;
-        margin-top: 10px;
-      }
-      .spinner {
-        border: 2px solid #f3f3f3;
-        border-top: 2px solid #4caf50;
-        border-radius: 50%;
-        width: 20px;
-        height: 20px;
-        animation: spin 1s linear infinite;
-        display: inline-block;
-        margin-right: 10px;
-      }
-      @keyframes spin {
-        0% {
-          transform: rotate(0deg);
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+            font-size: 16px;
         }
-        100% {
-          transform: rotate(360deg);
+        input:focus {
+            border-color: #4caf50;
+            outline: none;
         }
-      }
+        button {
+            background-color: #4caf50;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .error {
+            color: #d32f2f;
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            border-left: 4px solid #d32f2f;
+        }
+        .success {
+            color: #2e7d32;
+            background: #e8f5e8;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            border-left: 4px solid #2e7d32;
+        }
+        .debug-panel {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+        }
+        .debug-panel h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            padding: 3px 0;
+            border-bottom: 1px dotted #ccc;
+        }
+        .status-good { color: #28a745; }
+        .status-bad { color: #dc3545; }
+        .status-warning { color: #ffc107; }
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 10px;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4caf50;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .test-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .test-buttons button {
+            flex: 1;
+            background: #17a2b8;
+            font-size: 14px;
+            padding: 8px 12px;
+        }
+        .test-buttons button:hover {
+            background: #138496;
+        }
     </style>
-  </head>
-  <body>
-    <h1>Face Recognition API Login</h1>
-    <form id="loginForm">
-      <div class="form-group">
-        <label for="username">Username:</label>
-        <input type="text" id="username" name="username" required />
-      </div>
-      <div class="form-group">
-        <label for="password">Password:</label>
-        <input type="password" id="password" name="password" required />
-      </div>
-      <button type="submit" id="loginBtn">Login</button>
-      <div class="loading" id="loading">
-        <div class="spinner"></div>
-        Logging in...
-      </div>
-    </form>
-    <p id="error" class="error"></p>
-
-    <!-- Success Screen -->
-    <div class="success-screen" id="successScreen">
-      <div class="checkmark">✓</div>
-      <h2>Login Successful!</h2>
-      <p>Welcome to Face Recognition API</p>
-      <p>Redirecting...</p>
+</head>
+<body>
+    <div class="login-container">
+        <h1>🔐 Face Recognition API</h1>
+        
+        <!-- Test buttons -->
+        <div class="test-buttons">
+            <button type="button" onclick="testConnection()">Test Connection</button>
+            <button type="button" onclick="debugAuth()">Debug Auth</button>
+            <button type="button" onclick="clearStorage()">Clear Storage</button>
+        </div>
+        
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">Username:</label>
+                <input type="text" id="username" name="username" value="admin" required />
+            </div>
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" value="admin" required />
+            </div>
+            <button type="submit" id="loginBtn">🚀 Login</button>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div>Authenticating...</div>
+            </div>
+        </form>
+        
+        <div id="message"></div>
+        
+        <!-- Debug Panel -->
+        <div class="debug-panel">
+            <h3>🔧 Debug Information</h3>
+            <div class="status-item">
+                <span>Current URL:</span>
+                <span id="currentUrl" class="status-good">-</span>
+            </div>
+            <div class="status-item">
+                <span>Cookies Available:</span>
+                <span id="cookiesStatus" class="status-warning">-</span>
+            </div>
+            <div class="status-item">
+                <span>Token Found:</span>
+                <span id="tokenStatus" class="status-bad">-</span>
+            </div>
+            <div class="status-item">
+                <span>Last API Call:</span>
+                <span id="lastApiCall" class="status-good">-</span>
+            </div>
+            <div class="status-item">
+                <span>Auth Method:</span>
+                <span id="authMethod" class="status-warning">-</span>
+            </div>
+            <div style="margin-top: 10px;">
+                <strong>All Cookies:</strong><br>
+                <div id="allCookies" style="word-break: break-all; max-height: 100px; overflow-y: auto;">-</div>
+            </div>
+        </div>
     </div>
 
     <script>
-      // Function to set cookie
-      function setCookie(name, value, days) {
-        const expires = new Date();
-        expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
-        document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
-      }
+        // Global state
+        let authToken = null;
+        let debugMode = true;
 
-      // Function to get cookie
-      function getCookie(name) {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop().split(";").shift();
-        return null;
-      }
-
-      document
-        .getElementById("loginForm")
-        .addEventListener("submit", async function (e) {
-          e.preventDefault();
-
-          const username = document.getElementById("username").value;
-          const password = document.getElementById("password").value;
-          const errorElement = document.getElementById("error");
-          const loginBtn = document.getElementById("loginBtn");
-          const loading = document.getElementById("loading");
-
-          // Clear previous errors
-          errorElement.textContent = "";
-
-          // Show loading state
-          loginBtn.disabled = true;
-          loading.style.display = "block";
-
-          try {
-            // Make login request
-            const response = await fetch("/token", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-              },
-              body: `username=${encodeURIComponent(
-                username
-              )}&password=${encodeURIComponent(password)}`,
-            });
-
-            if (response.ok) {
-              const data = await response.json();
-
-              if (data.access_token) {
-                // Set cookie with access token (expires in 7 days)
-                setCookie("access_token", data.access_token, 7);
-                setCookie("token_type", data.token_type, 7);
-
-                // Show success screen
-                document.getElementById("successScreen").classList.add("show");
-
-                // Redirect after 3 seconds
-                setTimeout(() => {
-                  // You can redirect to your main application page here
-                  window.location.href = "/dashboard"; // Change this to your desired redirect URL
-                }, 3000);
-              } else {
-                throw new Error("No access token received");
-              }
-            } else {
-              const errorData = await response.json();
-              throw new Error(errorData.detail || "Login failed");
+        // Utility functions
+        function log(message) {
+            if (debugMode) {
+                console.log(`[Auth Debug] ${message}`);
             }
-          } catch (error) {
-            console.error("Login error:", error);
-            errorElement.textContent =
-              error.message || "Login failed. Please try again.";
-          } finally {
-            // Hide loading state
-            loginBtn.disabled = false;
-            loading.style.display = "none";
-          }
+        }
+
+        function showMessage(text, type = 'error') {
+            const messageEl = document.getElementById('message');
+            messageEl.innerHTML = `<div class="${type}">${text}</div>`;
+        }
+
+        function updateDebugInfo() {
+            document.getElementById('currentUrl').textContent = window.location.href;
+            document.getElementById('allCookies').textContent = document.cookie || 'No cookies';
+            
+            // Check if cookies are working
+            const testCookie = 'test_cookie_' + Date.now();
+            document.cookie = `${testCookie}=working; path=/`;
+            const cookiesWork = document.cookie.includes(testCookie);
+            document.getElementById('cookiesStatus').textContent = cookiesWork ? 'Working' : 'Not Working';
+            document.getElementById('cookiesStatus').className = cookiesWork ? 'status-good' : 'status-bad';
+            
+            // Clean up test cookie
+            if (cookiesWork) {
+                document.cookie = `${testCookie}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/`;
+            }
+            
+            // Check for any auth tokens
+            const tokenFromCookie = getCookie('token') || getCookie('auth_token');
+            const tokenFromStorage = localStorage.getItem('token') || sessionStorage.getItem('token');
+            const hasToken = !!(tokenFromCookie || tokenFromStorage);
+            
+            document.getElementById('tokenStatus').textContent = hasToken ? 'Found' : 'Not Found';
+            document.getElementById('tokenStatus').className = hasToken ? 'status-good' : 'status-bad';
+            
+            if (tokenFromCookie) {
+                document.getElementById('authMethod').textContent = 'Cookie';
+                document.getElementById('authMethod').className = 'status-good';
+            } else if (tokenFromStorage) {
+                document.getElementById('authMethod').textContent = 'Storage';
+                document.getElementById('authMethod').className = 'status-warning';
+            } else {
+                document.getElementById('authMethod').textContent = 'None';
+                document.getElementById('authMethod').className = 'status-bad';
+            }
+        }
+
+        // Enhanced cookie functions
+        function setCookie(name, value, days = 1) {
+            const expires = new Date();
+            expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+            
+            // Set cookie with multiple variations for compatibility
+            document.cookie = `${name}=${value}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
+            document.cookie = `${name}=${value}; expires=${expires.toUTCString()}; path=/`;
+            
+            log(`Set cookie: ${name}=${value.substring(0, 20)}...`);
+            
+            // Also save to localStorage as backup
+            try {
+                localStorage.setItem(name, value);
+                log(`Also saved to localStorage: ${name}`);
+            } catch (e) {
+                log(`Failed to save to localStorage: ${e.message}`);
+            }
+        }
+
+        function getCookie(name) {
+            // Try cookie first
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) {
+                const cookieValue = parts.pop().split(';').shift();
+                if (cookieValue) {
+                    log(`Found cookie: ${name}=${cookieValue.substring(0, 20)}...`);
+                    return cookieValue;
+                }
+            }
+            
+            // Try localStorage as backup
+            try {
+                const storageValue = localStorage.getItem(name);
+                if (storageValue) {
+                    log(`Found in localStorage: ${name}=${storageValue.substring(0, 20)}...`);
+                    return storageValue;
+                }
+            } catch (e) {
+                log(`Failed to read from localStorage: ${e.message}`);
+            }
+            
+            log(`Cookie/storage not found: ${name}`);
+            return null;
+        }
+
+        function deleteCookie(name) {
+            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/`;
+            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax`;
+            try {
+                localStorage.removeItem(name);
+                sessionStorage.removeItem(name);
+            } catch (e) {
+                log(`Failed to clear storage for: ${name}`);
+            }
+            log(`Deleted: ${name}`);
+        }
+
+        // API functions
+        async function makeRequest(url, options = {}) {
+            const timestamp = new Date().toISOString();
+            log(`Making request to: ${url}`);
+            
+            try {
+                const response = await fetch(url, {
+                    ...options,
+                    credentials: 'include'
+                });
+                
+                const status = `${response.status} ${response.statusText}`;
+                document.getElementById('lastApiCall').textContent = `${url} - ${status}`;
+                document.getElementById('lastApiCall').className = response.ok ? 'status-good' : 'status-bad';
+                
+                log(`Response: ${status}`);
+                return response;
+            } catch (error) {
+                document.getElementById('lastApiCall').textContent = `${url} - Error: ${error.message}`;
+                document.getElementById('lastApiCall').className = 'status-bad';
+                log(`Request failed: ${error.message}`);
+                throw error;
+            }
+        }
+
+        // Test functions
+        async function testConnection() {
+            showMessage('Testing connection...', 'success');
+            try {
+                const response = await makeRequest('/docs');
+                if (response.ok) {
+                    showMessage('Connection OK! Server is responding.', 'success');
+                } else {
+                    showMessage(`Connection failed: ${response.status} ${response.statusText}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`Connection error: ${error.message}`, 'error');
+            }
+            updateDebugInfo();
+        }
+
+        async function debugAuth() {
+            const token = getCookie('token') || getCookie('auth_token');
+            if (!token) {
+                showMessage('No token found to debug', 'error');
+                return;
+            }
+
+            try {
+                const response = await makeRequest('/config', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    showMessage(`Auth working! Got config data.`, 'success');
+                } else {
+                    showMessage(`Auth debug failed: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`Debug error: ${error.message}`, 'error');
+            }
+        }
+
+        function clearStorage() {
+            // Clear all possible auth tokens
+            deleteCookie('token');
+            deleteCookie('auth_token');
+            deleteCookie('access_token');
+            deleteCookie('token_type');
+            
+            showMessage('All authentication data cleared', 'success');
+            updateDebugInfo();
+        }
+
+        // Check if already authenticated
+        async function checkExistingAuth() {
+            const token = getCookie('token') || getCookie('auth_token');
+            if (!token) {
+                log('No existing token found');
+                return false;
+            }
+
+            log('Found existing token, validating...');
+            try {
+                const response = await makeRequest('/config', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    log('Existing token is valid, redirecting...');
+                    showMessage('Already authenticated, redirecting...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                    return true;
+                } else {
+                    log('Existing token is invalid, clearing...');
+                    clearStorage();
+                    return false;
+                }
+            } catch (error) {
+                log(`Token validation failed: ${error.message}`);
+                clearStorage();
+                return false;
+            }
+        }
+
+        // Login form handler
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const loginBtn = document.getElementById('loginBtn');
+            const loading = document.getElementById('loading');
+            
+            // Show loading
+            loginBtn.disabled = true;
+            loading.style.display = 'block';
+            showMessage('Logging in...', 'success');
+            
+            try {
+                log(`Attempting login for: ${username}`);
+                
+                const response = await makeRequest('/token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`Login successful, token received: ${data.access_token.substring(0, 20)}...`);
+                    
+                    // Store token using multiple methods
+                    setCookie('token', data.access_token);
+                    setCookie('auth_token', data.access_token);
+                    authToken = data.access_token;
+                    
+                    showMessage('Login successful! Redirecting...', 'success');
+                    
+                    // Update debug info
+                    updateDebugInfo();
+                    
+                    // Test the token immediately
+                    try {
+                        const testResponse = await makeRequest('/config', {
+                            headers: {
+                                'Authorization': `Bearer ${data.access_token}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        if (testResponse.ok) {
+                            log('Token validation test passed');
+                            setTimeout(() => {
+                                window.location.href = '/';
+                            }, 1500);
+                        } else {
+                            throw new Error(`Token validation failed: ${testResponse.status}`);
+                        }
+                    } catch (testError) {
+                        log(`Token test failed: ${testError.message}`);
+                        showMessage(`Warning: Token test failed: ${testError.message}`, 'error');
+                        
+                        // Still try to redirect, but with a longer delay
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 3000);
+                    }
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || `Login failed: ${response.status}`);
+                }
+            } catch (error) {
+                log(`Login error: ${error.message}`);
+                showMessage(`Login failed: ${error.message}`, 'error');
+            } finally {
+                loginBtn.disabled = false;
+                loading.style.display = 'none';
+            }
         });
 
-      // Function to logout (for testing purposes)
-      function logout() {
-        document.cookie =
-          "access_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-        document.cookie =
-          "token_type=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
-        location.reload();
-      }
-
-      // Add logout function to window for testing
-      window.logout = logout;
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            log('Page loaded, initializing...');
+            updateDebugInfo();
+            
+            // Update debug info periodically
+            setInterval(updateDebugInfo, 3000);
+            
+            // Check if already authenticated
+            checkExistingAuth();
+        });
     </script>
-  </body>
+</body>
 </html>

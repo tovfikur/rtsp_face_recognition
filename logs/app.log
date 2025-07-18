@@ -1,0 +1,43 @@
+[2025-07-17 12:39:49,925] INFO: Using device: cpu
+[2025-07-17 12:40:09,277] ERROR: Error loading models: module 'openface' has no attribute 'AlignDlib'
+[2025-07-17 12:40:09,277] INFO: Some models may not be available, fallback methods will be used
+[2025-07-17 12:40:09,357] INFO: Application started successfully
+[2025-07-17 13:07:13,819] INFO: Application shutdown complete
+[2025-07-17 13:07:17,201] INFO: Using device: cpu
+[2025-07-17 13:07:22,220] ERROR: Error loading models: module 'openface' has no attribute 'AlignDlib'
+[2025-07-17 13:07:22,221] INFO: Some models may not be available, fallback methods will be used
+[2025-07-17 13:07:22,276] INFO: Application started successfully
+[2025-07-17 13:34:30,582] INFO: Application shutdown complete
+[2025-07-17 13:34:34,376] INFO: Using device: cpu
+[2025-07-17 13:34:39,328] ERROR: Error loading models: module 'openface' has no attribute 'AlignDlib'
+[2025-07-17 13:34:39,328] INFO: Some models may not be available, fallback methods will be used
+[2025-07-17 13:34:39,382] INFO: Application started successfully
+[2025-07-17 13:35:40,755] INFO: Application shutdown complete
+[2025-07-17 13:36:05,868] INFO: Using device: cpu
+[2025-07-17 13:36:10,414] ERROR: Error loading models: module 'openface' has no attribute 'AlignDlib'
+[2025-07-17 13:36:10,414] INFO: Some models may not be available, fallback methods will be used
+[2025-07-17 13:36:10,460] INFO: Application started successfully
+[2025-07-17 13:45:59,559] INFO: Application shutdown complete
+[2025-07-17 13:46:03,131] INFO: Using device: cpu
+[2025-07-17 13:46:08,466] ERROR: Error loading models: module 'openface' has no attribute 'AlignDlib'
+[2025-07-17 13:46:08,467] INFO: Some models may not be available, fallback methods will be used
+[2025-07-17 13:46:26,204] INFO: Using device: cpu
+[2025-07-17 13:46:30,687] ERROR: Error loading models: module 'openface' has no attribute 'AlignDlib'
+[2025-07-17 13:46:30,688] INFO: Some models may not be available, fallback methods will be used
+[2025-07-17 13:49:03,956] INFO: Using device: cpu
+[2025-07-17 13:49:21,548] ERROR: Error loading models: module 'openface' has no attribute 'AlignDlib'
+[2025-07-17 13:49:21,549] INFO: Some models may not be available, fallback methods will be used
+[2025-07-17 13:56:03,457] INFO: Using device: cpu
+[2025-07-17 13:56:20,811] ERROR: Error loading models: module 'openface' has no attribute 'AlignDlib'
+[2025-07-17 13:56:20,811] INFO: Some models may not be available, fallback methods will be used
+[2025-07-17 13:56:20,912] INFO: Application started successfully
+[2025-07-17 14:15:56,634] WARNING: (trapped) error reading bcrypt version
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.9/site-packages/passlib/handlers/bcrypt.py", line 620, in _load_backend_mixin
+    version = _bcrypt.__about__.__version__
+AttributeError: module 'bcrypt' has no attribute '__about__'
+[2025-07-17 16:32:40,238] INFO: Using device: cpu
+[2025-07-17 16:32:59,702] ERROR: Error loading models: module 'openface' has no attribute 'AlignDlib'
+[2025-07-17 16:32:59,702] INFO: Some models may not be available, fallback methods will be used
+[2025-07-17 16:32:59,751] INFO: Adding detection_count column to rtsp_streams table
+[2025-07-17 16:32:59,768] INFO: Adding avg_processing_time column to rtsp_streams table

@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Configuration - Face Recognition API</title>
+    <style>
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f5f5f5;
+        margin: 0;
+        padding: 0;
+      }
+      .container {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 10px 10px 0 0;
+        margin: -20px -20px 20px -20px;
+      }
+      nav a {
+        margin-left: 15px;
+        color: white;
+        text-decoration: none;
+        font-weight: bold;
+      }
+      nav a:hover {
+        text-decoration: underline;
+      }
+      form div {
+        margin-bottom: 15px;
+      }
+      input {
+        width: 100%;
+        padding: 8px;
+      }
+      button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 10px 20px;
+        margin-right: 10px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      button:hover {
+        opacity: 0.9;
+      }
+      button#testCallback {
+        background: linear-gradient(135deg, #00b894 0%, #00a085 100%);
+      }
+      #configMessage {
+        margin-top: 10px;
+        padding: 10px;
+        border-radius: 5px;
+      }
+      #configMessage.success {
+        color: #008000;
+        background: #e6ffe6;
+      }
+      #configMessage.error {
+        color: #ff0000;
+        background: #ffe6e6;
+      }
+      .debug-info {
+        margin-top: 20px;
+        padding: 10px;
+        background: #f8f8f8;
+        border-radius: 5px;
+        font-size: 12px;
+        color: #666;
+        border: 1px solid #ddd;
+      }
+      .status-good { color: #28a745; }
+      .status-bad { color: #dc3545; }
+      .status-warning { color: #ffc107; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Face Recognition API Dashboard</h1>
+        <nav>
+          <a href="/">Home</a>
+          <a href="/rtsp/manage">RTSP Streams</a>
+          <a href="/logout">Logout</a>
+        </nav>
+      </header>
+      <main>
+        <section style="margin-bottom: 30px;">
+          <h2>Quick Actions</h2>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
+            <button onclick="window.location.href='/rtsp/manage'">Manage RTSP Streams</button>
+            <button onclick="window.location.href='/ws/test'">WebSocket Test</button>
+            <button onclick="window.location.href='/ws/live'">Live Detection</button>
+            <button onclick="testAuth()">Test Auth</button>
+          </div>
+        </section>
+        <section>
+          <h2>System Configuration</h2>
+          <form id="configForm">
+            <div>
+              <label for="tolerance">Face Recognition Tolerance (0-2):</label>
+              <input
+                type="number"
+                id="tolerance"
+                step="0.01"
+                min="0"
+                max="2"
+                placeholder="e.g., 0.9"
+              />
+            </div>
+            <div>
+              <label for="detectionThreshold">Detection Threshold (0-1):</label>
+              <input
+                type="number"
+                id="detectionThreshold"
+                step="0.01"
+                min="0"
+                max="1"
+                placeholder="e.g., 0.95"
+              />
+            </div>
+            <div>
+              <label for="callbackUrl">Callback URL:</label>
+              <input
+                type="url"
+                id="callbackUrl"
+                placeholder="e.g., https://example.com/callback"
+              />
+            </div>
+            <div>
+              <label for="callbackToken">Callback Token:</label>
+              <input
+                type="text"
+                id="callbackToken"
+                placeholder="Enter callback token"
+              />
+            </div>
+            <button type="submit">Update Config</button>
+            <button type="button" id="testCallback">Test Callback</button>
+          </form>
+          <p id="configMessage"></p>
+        </section>
+
+        <!-- Debug Section -->
+        <section>
+          <div class="debug-info">
+            <strong>🔧 Authentication Debug:</strong><br>
+            <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+              <span>Token Status:</span>
+              <span id="debugTokenStatus" class="status-bad">Checking...</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+              <span>Auth Method:</span>
+              <span id="debugAuthMethod" class="status-warning">-</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+              <span>Last API Call:</span>
+              <span id="debugLastCall" class="status-good">None</span>
+            </div>
+            <div style="margin-top: 10px;">
+              <strong>Available Cookies:</strong><br>
+              <div id="debugCookies" style="word-break: break-all; max-height: 60px; overflow-y: auto; font-size: 10px;">-</div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script>
+      // Global debug mode
+      const DEBUG = true;
+      
+      function log(message) {
+        if (DEBUG) {
+          console.log(`[Config Debug] ${message}`);
+        }
+      }
+
+      // Enhanced cookie utility functions
+      function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) {
+          const cookieValue = parts.pop().split(";").shift();
+          if (cookieValue) {
+            log(`Found cookie: ${name}=${cookieValue.substring(0, 20)}...`);
+            return cookieValue;
+          }
+        }
+        
+        // Try localStorage as backup
+        try {
+          const storageValue = localStorage.getItem(name);
+          if (storageValue) {
+            log(`Found in localStorage: ${name}=${storageValue.substring(0, 20)}...`);
+            return storageValue;
+          }
+        } catch (e) {
+          log(`Failed to read from localStorage: ${e.message}`);
+        }
+        
+        log(`Token not found: ${name}`);
+        return null;
+      }
+
+      function updateDebugInfo() {
+        const debugTokenStatus = document.getElementById('debugTokenStatus');
+        const debugAuthMethod = document.getElementById('debugAuthMethod');
+        const debugCookies = document.getElementById('debugCookies');
+        
+        if (debugCookies) {
+          debugCookies.textContent = document.cookie || 'None';
+        }
+        
+        const token = getCookie('token') || getCookie('auth_token');
+        if (debugTokenStatus) {
+          if (token) {
+            debugTokenStatus.textContent = `Found (${token.substring(0, 15)}...)`;
+            debugTokenStatus.className = 'status-good';
+          } else {
+            debugTokenStatus.textContent = 'Not found';
+            debugTokenStatus.className = 'status-bad';
+          }
+        }
+        
+        if (debugAuthMethod) {
+          if (getCookie('token')) {
+            debugAuthMethod.textContent = 'Cookie (token)';
+            debugAuthMethod.className = 'status-good';
+          } else if (getCookie('auth_token')) {
+            debugAuthMethod.textContent = 'Cookie (auth_token)';
+            debugAuthMethod.className = 'status-warning';
+          } else if (localStorage.getItem('token')) {
+            debugAuthMethod.textContent = 'localStorage';
+            debugAuthMethod.className = 'status-warning';
+          } else {
+            debugAuthMethod.textContent = 'None';
+            debugAuthMethod.className = 'status-bad';
+          }
+        }
+      }
+
+      // Enhanced API call function with better error handling
+      async function makeAuthenticatedRequest(url, options = {}) {
+        const token = getCookie("token") || getCookie("auth_token");
+        
+        log(`Making authenticated request to: ${url}`);
+        log(`Token available: ${token ? 'Yes' : 'No'}`);
+        
+        if (!token) {
+          log('No token found, redirecting to login');
+          window.location.href = "/login";
+          return null;
+        }
+
+        const defaultOptions = {
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          credentials: 'include'
+        };
+
+        const mergedOptions = {
+          ...defaultOptions,
+          ...options,
+          headers: {
+            ...defaultOptions.headers,
+            ...options.headers
+          }
+        };
+
+        try {
+          const response = await fetch(url, mergedOptions);
+          
+          // Update debug info
+          const debugLastCall = document.getElementById('debugLastCall');
+          if (debugLastCall) {
+            debugLastCall.textContent = `${url} - Status: ${response.status}`;
+            debugLastCall.className = response.ok ? 'status-good' : 'status-bad';
+          }
+          
+          log(`API Response: ${response.status} ${response.statusText}`);
+          
+          if (response.status === 401 || response.status === 403) {
+            log('Authentication failed, redirecting to login');
+            window.location.href = "/login";
+            return null;
+          }
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          return response;
+        } catch (error) {
+          log(`Request failed: ${error.message}`);
+          
+          // Update debug info
+          const debugLastCall = document.getElementById('debugLastCall');
+          if (debugLastCall) {
+            debugLastCall.textContent = `${url} - Error: ${error.message}`;
+            debugLastCall.className = 'status-bad';
+          }
+          
+          throw error;
+        }
+      }
+
+      // Test authentication function
+      async function testAuth() {
+        const configMessage = document.getElementById("configMessage");
+        try {
+          log("Testing authentication...");
+          const response = await makeAuthenticatedRequest("/debug/auth");
+          
+          if (response) {
+            const data = await response.json();
+            log("Auth test successful:", data);
+            configMessage.textContent = `Auth test successful! Method: ${data.auth_method || 'Unknown'}`;
+            configMessage.className = "success";
+          }
+        } catch (error) {
+          log("Auth test failed:", error);
+          configMessage.textContent = `Auth test failed: ${error.message}`;
+          configMessage.className = "error";
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", async () => {
+        const configForm = document.getElementById("configForm");
+        const testCallbackBtn = document.getElementById("testCallback");
+        const configMessage = document.getElementById("configMessage");
+
+        // Update debug info initially and every 3 seconds
+        updateDebugInfo();
+        setInterval(updateDebugInfo, 3000);
+
+        // Check authentication immediately
+        const token = getCookie("token") || getCookie("auth_token");
+        if (!token) {
+          log("No authentication token found, redirecting to login");
+          window.location.href = "/login";
+          return;
+        }
+
+        // Fetch current configuration
+        async function loadConfig() {
+          try {
+            log("Loading configuration...");
+            const response = await makeAuthenticatedRequest("/config");
+            
+            if (!response) return; // Already handled redirect
+            
+            const config = await response.json();
+            log("Configuration loaded:", config);
+            
+            document.getElementById("tolerance").value = config.TOLERANCE || "";
+            document.getElementById("detectionThreshold").value = config.DETECTION_THRESHOLD || "";
+            document.getElementById("callbackUrl").value = config.CALLBACK_URL || "";
+            document.getElementById("callbackToken").value = config.CALLBACK_TOKEN || "";
+            
+            configMessage.textContent = "Configuration loaded successfully";
+            configMessage.className = "success";
+            
+          } catch (error) {
+            log("Failed to load configuration:", error);
+            configMessage.textContent = `Error loading config: ${error.message}`;
+            configMessage.className = "error";
+          }
+        }
+
+        // Handle form submission
+        configForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          
+          const tolerance = document.getElementById("tolerance").value;
+          const detectionThreshold = document.getElementById("detectionThreshold").value;
+          const callbackUrl = document.getElementById("callbackUrl").value;
+          const callbackToken = document.getElementById("callbackToken").value;
+
+          // Validation
+          if (tolerance && (tolerance < 0 || tolerance > 2)) {
+            configMessage.textContent = "Tolerance must be between 0 and 2";
+            configMessage.className = "error";
+            return;
+          }
+          if (detectionThreshold && (detectionThreshold < 0 || detectionThreshold > 1)) {
+            configMessage.textContent = "Detection threshold must be between 0 and 1";
+            configMessage.className = "error";
+            return;
+          }
+
+          const configData = {};
+          if (tolerance) configData.tolerance = parseFloat(tolerance);
+          if (detectionThreshold) configData.detection_threshold = parseFloat(detectionThreshold);
+
+          try {
+            log("Updating configuration:", configData);
+            const response = await makeAuthenticatedRequest("/config", {
+              method: "PUT",
+              body: JSON.stringify(configData),
+            });
+            
+            if (!response) return; // Already handled redirect
+            
+            const result = await response.json();
+            log("Configuration updated:", result);
+            
+            configMessage.textContent = "Configuration updated successfully";
+            configMessage.className = "success";
+            
+            // Reload to show updated values
+            setTimeout(loadConfig, 1000);
+            
+          } catch (error) {
+            log("Failed to update configuration:", error);
+            configMessage.textContent = `Error updating config: ${error.message}`;
+            configMessage.className = "error";
+          }
+        });
+
+        // Test callback URL
+        testCallbackBtn.addEventListener("click", async () => {
+          const callbackUrl = document.getElementById("callbackUrl").value;
+          const callbackToken = document.getElementById("callbackToken").value;
+          
+          if (!callbackUrl) {
+            configMessage.textContent = "Please enter a callback URL";
+            configMessage.className = "error";
+            return;
+          }
+          
+          try {
+            const headers = { "Content-Type": "application/json" };
+            if (callbackToken) headers["API-Key"] = callbackToken;
+            
+            const testData = { 
+              test: "callback",
+              timestamp: new Date().toISOString(),
+              employee_id: 999,
+              check_in: new Date().toISOString()
+            };
+            
+            log("Testing callback URL:", callbackUrl);
+            const response = await fetch(callbackUrl, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(testData),
+            });
+            
+            if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            
+            configMessage.textContent = "Callback test successful";
+            configMessage.className = "success";
+            
+          } catch (error) {
+            log("Callback test failed:", error);
+            configMessage.textContent = `Callback test failed: ${error.message}`;
+            configMessage.className = "error";
+          }
+        });
+
+        // Initial load
+        loadConfig();
+      });
+    </script>
+  </body>
+</html>

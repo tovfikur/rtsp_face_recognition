@@ -2,74 +2,157 @@
 <html>
   <head>
     <title>WebSocket Test Client</title>
+    <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <h1>WebSocket Test Client</h1>
-    <p>
-      Enter your JWT token and click "Connect" to test the WebSocket endpoint.
-    </p>
-    <label for="token">JWT Token:</label>
-    <input
-      type="text"
-      id="token"
-      placeholder="Enter your JWT token"
-      size="50"
-    />
-    <br /><br />
-    <button onclick="connectWebSocket()">Connect</button>
-    <button onclick="disconnectWebSocket()">Disconnect</button>
-    <br /><br />
-    <textarea id="messages" cols="100" rows="20" readonly></textarea>
-    <br /><br />
-    <input type="file" id="imageFile" accept="image/*" />
-    <button onclick="sendImage()">Send Image</button>
+    <div class="container">
+      <header>
+        <h1>WebSocket Test Client</h1>
+        <nav>
+          <a href="/">Dashboard</a>
+          <a href="/rtsp/manage">RTSP Streams</a>
+          <a href="/logout">Logout</a>
+        </nav>
+      </header>
+      <main>
+        <p>Test the WebSocket face detection endpoint by uploading images.</p>
+        
+        <div style="margin-bottom: 20px;">
+          <label for="token">JWT Token (optional - uses cookie if not provided):</label>
+          <input
+            type="text"
+            id="token"
+            placeholder="Enter your JWT token or leave empty to use cookie"
+            style="margin-bottom: 10px;"
+          />
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <button id="connectBtn" onclick="connectWebSocket()">Connect</button>
+          <button id="disconnectBtn" onclick="disconnectWebSocket()">Disconnect</button>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <label for="messages">Connection Log:</label>
+          <textarea id="messages" cols="100" rows="10" readonly style="width: 100%;"></textarea>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <label for="imageFile">Select Image:</label>
+          <input type="file" id="imageFile" accept="image/*" />
+          <button onclick="sendImage()">Send Image</button>
+        </div>
+        
+        <div id="status"></div>
+      </main>
+    </div>
 
     <script>
-      var ws;
+      let socket = null;
+      
+      function log(message) {
+        const messages = document.getElementById('messages');
+        messages.value += new Date().toLocaleTimeString() + ' - ' + message + '\n';
+        messages.scrollTop = messages.scrollHeight;
+      }
+      
+      function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
+      }
+      
       function connectWebSocket() {
-        var token = document.getElementById("token").value;
-        var wsUrl =
-          "ws://" + window.location.host + "/ws/detection?token=" + token;
-        ws = new WebSocket(wsUrl);
-        ws.onopen = function () {
-          document.getElementById("messages").value += "Connected\\n";
+        const tokenInput = document.getElementById('token');
+        const token = tokenInput.value.trim() || getCookie('token');
+        const statusDiv = document.getElementById('status');
+        
+        if (!token) {
+          statusDiv.textContent = 'No token found. Please login or provide a token.';
+          statusDiv.className = 'error';
+          return;
+        }
+        
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          statusDiv.textContent = 'Already connected!';
+          statusDiv.className = 'error';
+          return;
+        }
+        
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        socket = new WebSocket(`${protocol}//${window.location.host}/ws/detection?token=${token}`);
+        
+        socket.onopen = () => {
+          log('WebSocket connected successfully');
+          statusDiv.textContent = 'Connected to WebSocket';
+          statusDiv.className = 'success';
+          document.getElementById('connectBtn').disabled = true;
+          document.getElementById('disconnectBtn').disabled = false;
         };
-        ws.onmessage = function (event) {
-          document.getElementById("messages").value +=
-            "Received: " + event.data + "\\n";
+        
+        socket.onmessage = (event) => {
+          log('Received: ' + event.data);
+          statusDiv.textContent = `Detection result: ${event.data}`;
+          statusDiv.className = event.data === 'unknown' ? 'error' : 'success';
         };
-        ws.onclose = function () {
-          document.getElementById("messages").value += "Disconnected\\n";
+        
+        socket.onclose = () => {
+          log('WebSocket disconnected');
+          statusDiv.textContent = 'Disconnected from WebSocket';
+          statusDiv.className = 'error';
+          socket = null;
+          document.getElementById('connectBtn').disabled = false;
+          document.getElementById('disconnectBtn').disabled = true;
         };
-        ws.onerror = function (event) {
-          document.getElementById("messages").value +=
-            "Error: " + event.data + "\\n";
+        
+        socket.onerror = (error) => {
+          log('WebSocket error occurred');
+          statusDiv.textContent = 'WebSocket connection error';
+          statusDiv.className = 'error';
         };
       }
+      
       function disconnectWebSocket() {
-        if (ws) {
-          ws.close();
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.close();
+          log('Disconnecting WebSocket...');
         }
       }
+      
       function sendImage() {
-        var fileInput = document.getElementById("imageFile");
-        var file = fileInput.files[0];
-        if (file) {
-          var reader = new FileReader();
-          reader.onload = function (event) {
-            // Remove the data URL prefix so only the base64 data is sent.
-            var base64Data = event.target.result.split(",")[1];
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(base64Data);
-            } else {
-              alert("WebSocket is not connected.");
-            }
-          };
-          reader.readAsDataURL(file);
-        } else {
-          alert("No image selected.");
+        const statusDiv = document.getElementById('status');
+        
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          statusDiv.textContent = 'WebSocket not connected. Please connect first.';
+          statusDiv.className = 'error';
+          return;
         }
+        
+        const fileInput = document.getElementById('imageFile');
+        const file = fileInput.files[0];
+        
+        if (!file) {
+          statusDiv.textContent = 'Please select an image file';
+          statusDiv.className = 'error';
+          return;
+        }
+        
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64Data = reader.result.split(',')[1];
+          socket.send(base64Data);
+          log('Image sent for detection');
+          statusDiv.textContent = 'Image sent, waiting for detection result...';
+          statusDiv.className = '';
+        };
+        reader.readAsDataURL(file);
       }
+      
+      // Initial button states
+      document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('disconnectBtn').disabled = true;
+      });
     </script>
   </body>
 </html>

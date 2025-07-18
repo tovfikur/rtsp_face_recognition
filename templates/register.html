@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Register Face</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Register Face</h1>
+        <nav>
+          <a href="/">Dashboard</a>
+          <a href="/rtsp/manage">RTSP Streams</a>
+          <a href="/logout">Logout</a>
+        </nav>
+      </header>
+      <main>
+        <form id="registerForm" enctype="multipart/form-data">
+          <div>
+            <label for="personId">Person ID:</label>
+            <input type="text" id="personId" required />
+          </div>
+          <div>
+            <label for="images">Face Images:</label>
+            <input type="file" id="images" multiple accept="image/*" required />
+          </div>
+          <button type="submit">Register</button>
+        </form>
+        <p id="registerMessage"></p>
+      </main>
+    </div>
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const registerForm = document.getElementById("registerForm");
+        const registerMessage = document.getElementById("registerMessage");
+
+        registerForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const personId = document.getElementById("personId").value.trim();
+          const images = document.getElementById("images").files;
+
+          if (!personId) {
+            registerMessage.textContent = "Person ID is required";
+            registerMessage.className = "error";
+            return;
+          }
+          if (images.length === 0) {
+            registerMessage.textContent = "At least one image is required";
+            registerMessage.className = "error";
+            return;
+          }
+
+          const formData = new FormData();
+          formData.append("person_id", personId);
+          for (const image of images) {
+            formData.append("images", image);
+          }
+
+          try {
+            const response = await fetch("/register", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${getCookie("token")}` },
+              body: formData,
+            });
+            if (!response.ok) {
+              if (response.status === 401) window.location.href = "/login";
+              throw new Error("Failed to register face");
+            }
+            const result = await response.json();
+            registerMessage.textContent = result.message;
+            registerMessage.className = "success";
+            registerForm.reset();
+          } catch (error) {
+            registerMessage.textContent = `Error: ${error.message}`;
+            registerMessage.className = "error";
+          }
+        });
+
+        function getCookie(name) {
+          const value = `; ${document.cookie}`;
+          const parts = value.split(`; ${name}=`);
+          if (parts.length === 2) return parts.pop().split(";").shift();
+          return null;
+        }
+      });
+    </script>
+  </body>
+</html>

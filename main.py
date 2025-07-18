@@ -194,6 +194,59 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
+async def get_current_user_flexible(request: Request, db: Session = Depends(get_db)) -> User:
+    """
+    Flexible authentication that tries multiple methods:
+    1. Authorization header (Bearer token)
+    2. Cookie (token)
+    3. Query parameter (token) - for debugging
+    """
+    token = None
+    
+    # Method 1: Try Authorization header first
+    authorization = request.headers.get("Authorization")
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]  # Remove "Bearer " prefix
+        print(f"Auth method: Bearer header, token: {token[:20]}...")
+    
+    # Method 2: Try cookie
+    if not token:
+        token = request.cookies.get("token")
+        if token:
+            print(f"Auth method: Cookie, token: {token[:20]}...")
+    
+    # Method 3: Try backup cookie
+    if not token:
+        token = request.cookies.get("auth_token")
+        if token:
+            print(f"Auth method: Backup cookie, token: {token[:20]}...")
+    
+    # Method 4: Try query parameter (for debugging)
+    if not token:
+        token = request.query_params.get("token")
+        if token:
+            print(f"Auth method: Query param, token: {token[:20]}...")
+    
+    if not token:
+        print("No token found in any location")
+        raise HTTPException(status_code=401, detail="No authentication token found")
+    
+    try:
+        payload = decode_token(token)
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid token: no username")
+        
+        user = get_user(db, username)
+        if user is None:
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        print(f"Authentication successful for user: {username}")
+        return user
+    except Exception as e:
+        print(f"Token validation failed: {str(e)}")
+        raise HTTPException(status_code=401, detail=f"Token validation failed: {str(e)}")
+
 async def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
     """
     Dependency that ensures the current user is an administrator.
@@ -545,22 +598,45 @@ async def logout(response: Response):
     return RedirectResponse(url="/login")
 
 @app.get("/", response_class=HTMLResponse)
-async def config_page(request: Request):
-    token = request.cookies.get("token")
+async def config_page(request: Request, db: Session = Depends(get_db)):
+    print("Home page accessed")
+    
+    # Try multiple token sources
+    token = None
+    auth_source = None
+    
+    # Check Authorization header
+    authorization = request.headers.get("Authorization")
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]
+        auth_source = "header"
+    
+    # Check cookies
     if not token:
+        token = request.cookies.get("token")
+        if token:
+            auth_source = "cookie-token"
+    
+    if not token:
+        token = request.cookies.get("auth_token")
+        if token:
+            auth_source = "cookie-auth_token"
+    
+    print(f"Token found in: {auth_source}, token: {token[:20] if token else 'None'}...")
+    
+    if not token:
+        print("No token found, redirecting to login")
         return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
 
     # Validate token
     try:
         decode_token(token)
-    except HTTPException:
+        print("Token validation successful")
+    except HTTPException as e:
+        print(f"Token validation failed: {e.detail}")
         return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
 
-    # Attempt to render template; if missing, return raw HTML wrapped
-    try:
-        return templates.TemplateResponse("config.html", {"request": request})
-    except TemplateNotFound:
-        return templates.TemplateResponse("config.html", {"request": request}, status_code=status.HTTP_404_NOT_FOUND)
+    return templates.TemplateResponse("config.html", {"request": request})
 
 
 # ----------------------------------------------------------------------------------
@@ -592,17 +668,37 @@ async def update_callback_config(config: CallbackConfig, current_user: User = De
           description="Submit your username and password (as form data) to receive a JWT token for authentication. "
                       "The token is required for accessing secure endpoints. This token expires after 30 minutes.")
 async def login_for_access_token(response: Response, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    print(f"Login attempt for user: {form_data.username}")
+    
     user = get_user(db, form_data.username)
     if not user or not verify_password(form_data.password, user.hashed_password):
+        print("Login failed: Invalid credentials")
         raise HTTPException(status_code=401, detail="Incorrect username or password")
+    
     access_token = create_access_token(data={"sub": user.username})
+    print(f"Token created for {user.username}: {access_token[:20]}...")
+    
+    # Set multiple cookie variations to ensure compatibility
     response.set_cookie(
         key="token", 
         value=access_token,
-        httponly=True,
+        httponly=False,  # Allow JavaScript access for debugging
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        samesite="lax"
+        samesite="lax",
+        secure=False  # Set to True in production with HTTPS
     )
+    
+    # Also set a backup cookie
+    response.set_cookie(
+        key="auth_token", 
+        value=access_token,
+        httponly=False,
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        samesite="lax",
+        secure=False
+    )
+    
+    print("Cookies set successfully")
     return {"access_token": access_token, "token_type": "bearer"}
 
 # ----------------------------------------------------------------------------------
@@ -657,7 +753,7 @@ async def authenticate_face(file: UploadFile = File(...),
 # ----------------------------------------------------------------------------------
 @app.get("/config", summary="Get current configuration",
          description="Retrieve the current configuration parameters (e.g., TOLERANCE and DETECTION_THRESHOLD) from the database.")
-async def get_config(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_config(current_user: User = Depends(get_current_user_flexible), db: Session = Depends(get_db)):
     entries = db.query(ConfigEntry).all()
     return {entry.key: entry.value for entry in entries}
 
@@ -665,7 +761,7 @@ async def get_config(current_user: User = Depends(get_current_user), db: Session
          description="Update configuration parameters by sending a JSON body with new values for tolerance and detection threshold. "
                      "The updated values will affect how strict face matching is performed.")
 async def update_config(update: ConfigUpdate,
-                        current_user: User = Depends(get_current_user),
+                        current_user: User = Depends(get_current_user_flexible),
                         db: Session = Depends(get_db)):
     if update.tolerance is not None:
         entry = db.query(ConfigEntry).filter(ConfigEntry.key == "TOLERANCE").first()
@@ -813,6 +909,50 @@ async def websocket_detection(websocket: WebSocket, token: str):
     finally:
         db.close()
         
+
+# ----------------------------------------------------------------------------------
+# DEBUG ENDPOINTS
+# ----------------------------------------------------------------------------------
+@app.get("/debug/auth")
+async def debug_auth(request: Request):
+    """Debug endpoint to check authentication status"""
+    
+    result = {
+        "cookies": dict(request.cookies),
+        "headers": {k: v for k, v in request.headers.items() if k.lower() not in ['authorization']},
+        "query_params": dict(request.query_params)
+    }
+    
+    # Try to get token
+    token = None
+    auth_method = None
+    
+    authorization = request.headers.get("Authorization")
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]
+        auth_method = "Bearer header"
+    elif request.cookies.get("token"):
+        token = request.cookies.get("token")
+        auth_method = "Cookie (token)"
+    elif request.cookies.get("auth_token"):
+        token = request.cookies.get("auth_token")
+        auth_method = "Cookie (auth_token)"
+    
+    result["token_found"] = bool(token)
+    result["auth_method"] = auth_method
+    result["token_preview"] = token[:20] + "..." if token else None
+    
+    if token:
+        try:
+            payload = decode_token(token)
+            result["token_valid"] = True
+            result["username"] = payload.get("sub")
+            result["expires"] = payload.get("exp")
+        except Exception as e:
+            result["token_valid"] = False
+            result["token_error"] = str(e)
+    
+    return result
 
 # ----------------------------------------------------------------------------------
 # WEBSOCKET TEST PAGES
@@ -1203,5 +1343,6 @@ def migrate_rtsp_table():
 # ----------------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
+    app.debug = True
     migrate_rtsp_table()
     uvicorn.run(app, host="0.0.0.0", port=8000)

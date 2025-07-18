@@ -176,196 +176,186 @@
     <div id="message"></div>
 
     <script>
-      const API_BASE = "";
+      document.addEventListener("DOMContentLoaded", () => {
+        const streamForm = document.getElementById("addStreamForm");
+        const streamList = document.getElementById("streamsList");
+        const messageDiv = document.getElementById("message");
 
-      // Get auth token from cookie
-      function getToken() {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; access_token=`);
-        if (parts.length === 2) return parts.pop().split(";").shift();
-        return null;
-      }
-
-      // Make authenticated API calls
-      async function apiCall(url, options = {}) {
-        const access_token = getToken();
-        if (!access_token) {
-          window.location.href = "/login";
-          return;
+        async function loadStreams() {
+          try {
+            const token = getCookie("token");
+            if (!token) {
+              window.location.href = "/login";
+              return;
+            }
+            const response = await fetch("/rtsp/streams", {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            });
+            if (!response.ok) {
+              if (response.status === 401) window.location.href = "/login";
+              throw new Error("Failed to fetch streams");
+            }
+            const streams = await response.json();
+            streamList.innerHTML = streams.length
+              ? ""
+              : "<p>No streams configured.</p>";
+            streams.forEach((stream) => {
+              const streamDiv = document.createElement("div");
+              streamDiv.className = "stream-item";
+              streamDiv.innerHTML = `
+                <div class="stream-info">
+                  <div class="stream-details">
+                    <h3>${stream.name} <span class="status ${
+                stream.is_active ? "active" : "inactive"
+              }">${stream.is_active ? "Active" : "Inactive"}</span></h3>
+                    <p><strong>URL:</strong> ${stream.rtsp_url}</p>
+                    <p><strong>Detections:</strong> ${
+                      stream.detection_count || 0
+                    } | 
+                       <strong>Avg. Processing:</strong> ${
+                         stream.avg_processing_time
+                           ? stream.avg_processing_time.toFixed(3)
+                           : "N/A"
+                       }s</p>
+                  </div>
+                  <div class="stream-actions">
+                    <button class="${
+                      stream.is_active ? "danger" : "success"
+                    }" onclick="toggleStream(${stream.id}, '${
+                stream.is_active ? "stop" : "start"
+              }')">
+                      ${stream.is_active ? "Stop" : "Start"}
+                    </button>
+                    <button class="danger" onclick="deleteStream(${
+                      stream.id
+                    })">Delete</button>
+                  </div>
+                </div>
+              `;
+              streamList.appendChild(streamDiv);
+            });
+          } catch (error) {
+            messageDiv.textContent = `Error: ${error.message}`;
+            messageDiv.className = "error";
+          }
         }
 
-        const headers = {
-          Authorization: `Bearer ${access_token}`,
-          "Content-Type": "application/json",
-          ...options.headers,
+        if (streamForm) {
+          streamForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const name = document.getElementById("streamName").value.trim();
+            const rtspUrl = document.getElementById("rtspUrl").value.trim();
+
+            if (!name || !rtspUrl) {
+              messageDiv.textContent = "Stream name and RTSP URL are required";
+              messageDiv.className = "error";
+              return;
+            }
+            if (!rtspUrl.startsWith("rtsp://")) {
+              messageDiv.textContent = "RTSP URL must start with rtsp://";
+              messageDiv.className = "error";
+              return;
+            }
+
+            try {
+              const token = getCookie("token");
+              if (!token) {
+                window.location.href = "/login";
+                return;
+              }
+              const response = await fetch("/rtsp/streams", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ name, rtsp_url: rtspUrl }),
+              });
+              if (!response.ok) {
+                if (response.status === 401 || response.status === 403)
+                  window.location.href = "/login";
+                throw new Error("Failed to add stream");
+              }
+              const result = await response.json();
+              messageDiv.textContent = result.message;
+              messageDiv.className = "success";
+              streamForm.reset();
+              loadStreams();
+            } catch (error) {
+              messageDiv.textContent = `Error: ${error.message}`;
+              messageDiv.className = "error";
+            }
+          });
+        }
+
+        window.toggleStream = async (streamId, action) => {
+          try {
+            const response = await fetch(
+              `/rtsp/streams/${streamId}/${action}`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${getCookie("token")}`,
+                  "Content-Type": "application/json",
+                },
+              }
+            );
+            if (!response.ok) {
+              if (response.status === 401) window.location.href = "/login";
+              throw new Error(`Failed to ${action} stream`);
+            }
+            const result = await response.json();
+            messageDiv.textContent = result.message;
+            messageDiv.className = "success";
+            loadStreams();
+          } catch (error) {
+            messageDiv.textContent = `Error: ${error.message}`;
+            messageDiv.className = "error";
+          }
         };
 
-        try {
-          const response = await fetch(url, { ...options, headers });
-          if (response.status === 401) {
-            window.location.href = "/login";
-            return;
+        window.deleteStream = async (streamId) => {
+          if (!confirm("Are you sure you want to delete this stream?")) return;
+          try {
+            const token = getCookie("token");
+            if (!token) {
+              window.location.href = "/login";
+              return;
+            }
+            const response = await fetch(`/rtsp/streams/${streamId}`, {
+              method: "DELETE",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            });
+            if (!response.ok) {
+              if (response.status === 401 || response.status === 403)
+                window.location.href = "/login";
+              throw new Error("Failed to delete stream");
+            }
+            const result = await response.json();
+            messageDiv.textContent = result.message;
+            messageDiv.className = "success";
+            loadStreams();
+          } catch (error) {
+            messageDiv.textContent = `Error: ${error.message}`;
+            messageDiv.className = "error";
           }
-          return response;
-        } catch (error) {
-          showMessage("Network error: " + error.message, "error");
+        };
+
+        function getCookie(name) {
+          const value = `; ${document.cookie}`;
+          const parts = value.split(`; ${name}=`);
+          if (parts.length === 2) return parts.pop().split(";").shift();
           return null;
         }
-      }
 
-      // Show messages
-      function showMessage(message, type = "success") {
-        const messageEl = document.getElementById("message");
-        messageEl.innerHTML = `<div class="${type}">${message}</div>`;
-        setTimeout(() => {
-          messageEl.innerHTML = "";
-        }, 5000);
-      }
-
-      // Load streams
-      async function loadStreams() {
-        const response = await apiCall("/rtsp/streams");
-        if (!response) return;
-
-        const streams = await response.json();
-        const streamsList = document.getElementById("streamsList");
-
-        if (streams.length === 0) {
-          streamsList.innerHTML = "<p>No RTSP streams configured.</p>";
-          return;
-        }
-
-        streamsList.innerHTML = streams
-          .map(
-            (stream) => `
-                <div class="stream-item">
-                    <div class="stream-info">
-                        <div class="stream-details">
-                            <h3>${stream.name} 
-                                <span class="status ${
-                                  stream.is_active ? "active" : "inactive"
-                                }">
-                                    ${stream.is_active ? "ACTIVE" : "INACTIVE"}
-                                </span>
-                            </h3>
-                            <p><strong>URL:</strong> ${stream.rtsp_url}</p>
-                            <p><strong>Created:</strong> ${new Date(
-                              stream.created_at
-                            ).toLocaleString()}</p>
-                            ${
-                              stream.last_detection
-                                ? `<p><strong>Last Detection:</strong> ${new Date(
-                                    stream.last_detection
-                                  ).toLocaleString()}</p>`
-                                : ""
-                            }
-                        </div>
-                        <div class="stream-actions">
-                            ${
-                              stream.is_active
-                                ? `<button class="danger" onclick="stopStream(${stream.id})">Stop</button>`
-                                : `<button class="success" onclick="startStream(${stream.id})">Start</button>`
-                            }
-                            <button class="danger" onclick="deleteStream(${
-                              stream.id
-                            }, '${stream.name}')">Delete</button>
-                        </div>
-                    </div>
-                </div>
-            `
-          )
-          .join("");
-      }
-
-      // Add stream
-      document
-        .getElementById("addStreamForm")
-        .addEventListener("submit", async (e) => {
-          e.preventDefault();
-          const formData = new FormData(e.target);
-          const data = Object.fromEntries(formData);
-
-          const response = await apiCall("/rtsp/streams", {
-            method: "POST",
-            body: JSON.stringify(data),
-          });
-
-          if (response && response.ok) {
-            showMessage("Stream added successfully!");
-            e.target.reset();
-            loadStreams();
-          } else {
-            const error = await response.json();
-            showMessage(
-              "Error adding stream: " + (error.detail || "Unknown error"),
-              "error"
-            );
-          }
-        });
-
-      // Start stream
-      async function startStream(streamId) {
-        const response = await apiCall(`/rtsp/streams/${streamId}/start`, {
-          method: "POST",
-        });
-
-        if (response && response.ok) {
-          const result = await response.json();
-          showMessage(result.message);
-          loadStreams();
-        } else {
-          const error = await response.json();
-          showMessage(
-            "Error starting stream: " + (error.detail || "Unknown error"),
-            "error"
-          );
-        }
-      }
-
-      // Stop stream
-      async function stopStream(streamId) {
-        const response = await apiCall(`/rtsp/streams/${streamId}/stop`, {
-          method: "POST",
-        });
-
-        if (response && response.ok) {
-          const result = await response.json();
-          showMessage(result.message);
-          loadStreams();
-        } else {
-          const error = await response.json();
-          showMessage(
-            "Error stopping stream: " + (error.detail || "Unknown error"),
-            "error"
-          );
-        }
-      }
-
-      // Delete stream
-      async function deleteStream(streamId, streamName) {
-        if (!confirm(`Are you sure you want to delete "${streamName}"?`)) {
-          return;
-        }
-
-        const response = await apiCall(`/rtsp/streams/${streamId}`, {
-          method: "DELETE",
-        });
-
-        if (response && response.ok) {
-          const result = await response.json();
-          showMessage(result.message);
-          loadStreams();
-        } else {
-          const error = await response.json();
-          showMessage(
-            "Error deleting stream: " + (error.detail || "Unknown error"),
-            "error"
-          );
-        }
-      }
-
-      // Load streams on page load
-      loadStreams();
+        loadStreams();
+      });
     </script>
   </body>
 </html>
