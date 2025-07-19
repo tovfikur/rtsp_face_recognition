@@ -1,4 +1,5 @@
 import os
+import gc
 import cv2
 import pickle
 import base64
@@ -10,11 +11,13 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Any, Dict
 import httpx
 import threading
+import traceback
+
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, WebSocket, WebSocketDisconnect, Form, Request, Response, status, Query
-from fastapi.responses import HTMLResponse,  RedirectResponse
+from fastapi.responses import HTMLResponse,  RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -269,27 +272,30 @@ logger.info(f"Using device: {device}")
 mtcnn = MTCNN(image_size=160, margin=20, device=device)
 resnet = InceptionResnetV1(pretrained='vggface2').eval().to(device)
 
-def compute_embedding(image: np.ndarray) -> np.ndarray:
+def compute_embeddings(image: np.ndarray) -> List[np.ndarray]:
     """
-    Compute a face embedding for a given image.
+    Compute face embeddings for all detected faces in a given image.
     
-    Data Flow:
-      1. Convert the input image from BGR (OpenCV format) to RGB.
-      2. Use MTCNN to detect a face within the image.
-      3. If a face is found, convert it into a tensor, pass it through the InceptionResnetV1 model,
-         and return the flattened embedding.
+    Args:
+        image: Input image in BGR format (OpenCV).
     
-    Raises:
-      - HTTPException if no face is detected.
+    Returns:
+        List of embeddings (numpy arrays), one for each detected face.
+        Empty list if no faces are detected.
     """
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    face = mtcnn(image_rgb)
-    if face is None:
-        raise HTTPException(status_code=400, detail="No face detected in the image")
-    face = face.unsqueeze(0).to(device)
+    faces = mtcnn(image_rgb)  # Returns [n, 3, 160, 160] or None
+    if faces is None or len(faces) == 0:
+        return []
+    
+    faces = faces.to(device)
+    # Ensure 4D tensor for resnet
+    if faces.dim() == 3:  # Single face: [3, 160, 160]
+        faces = faces.unsqueeze(0)  # Add batch dimension: [1, 3, 160, 160]
+    
     with torch.no_grad():
-        embedding = resnet(face).cpu().numpy().flatten()
-    return embedding
+        embeddings = resnet(faces).cpu().numpy()  # Shape: [n, 512]
+    return [emb.flatten() for emb in embeddings]  # List of [512,] arrays
 
 async def read_imagefile(file: UploadFile) -> np.ndarray:
     """
@@ -309,6 +315,41 @@ async def read_imagefile(file: UploadFile) -> np.ndarray:
     if image is None:
         raise HTTPException(status_code=400, detail="Invalid image")
     return image
+
+def process_frame(frame: np.ndarray, db: Session) -> List[str]:
+    """
+    Process a frame to detect and identify multiple faces.
+    
+    Args:
+        frame: Input image in BGR format.
+        db: Database session.
+    
+    Returns:
+        List of person IDs or "Unknown" for each detected face.
+    """
+    embeddings = compute_embeddings(frame)
+    if not embeddings:
+        return []  # No faces detected
+    
+    registered_faces = db.query(RegisteredFace).all()
+    if not registered_faces:
+        return ["No registered faces"] * len(embeddings)
+    
+    config_entry = db.query(ConfigEntry).filter(ConfigEntry.key == "TOLERANCE").first()
+    tolerance = float(config_entry.value) if config_entry else float(DEFAULT_CONFIG["TOLERANCE"])
+    
+    results = []
+    for embedding in embeddings:
+        distances = []
+        for face in registered_faces:
+            stored_embedding = pickle.loads(face.embedding)
+            dist = np.linalg.norm(stored_embedding - embedding)
+            distances.append((face.person_id, dist))
+        best_match = min(distances, key=lambda x: x[1])
+        person_id, min_distance = best_match
+        result = person_id if min_distance < tolerance else "Unknown"
+        results.append(result)
+    return results
 
 # ----------------------------------------------------------------------------------
 # INITIALIZATION: DEFAULT CONFIG & ADMIN USER
@@ -848,24 +889,33 @@ async def websocket_detection(websocket: WebSocket, token: str):
     
     Data Flow:
       1. Client connects using a JWT token (passed as a query parameter).
-      2. Each message is expected to be a base64‑encoded image frame.
-      3. The frame is decoded, converted to an image, and processed to compute a face embedding.
-      4. The embedding is compared with stored registered face embeddings.
-      5. The detected person_id (if matching) or "Unknown" is sent back as text.
+      2. Each message is expected to be a base64-encoded image frame.
+      3. The frame is decoded, converted to an image, and processed to compute face embeddings.
+      4. Embeddings are compared with stored registered face embeddings.
+      5. A list of detected person_ids (if matching) or "Unknown" is sent back as JSON.
       
-    **Usage:**  
-    - Connect using: `ws://<host>:8000/ws/detection?token=<JWT_TOKEN>`  
-    - Send base64‑encoded image frames to receive detection results.
+    **Usage:**
+    - Connect using: `ws://<host>:8000/ws/detection?token=<JWT_TOKEN>`
+    - Send base64-encoded image frames to receive detection results.
     
     *Note:* Swagger UI does not support testing WebSocket endpoints.
     """
     try:
+        # Validate JWT token
         payload = decode_token(token)
         username: str = payload.get("sub")
         if username is None:
-            await websocket.close(code=1008)
+            logger.error(f"Invalid token payload: Missing 'sub' field")
+            await websocket.close(code=1008)  # Policy violation
             return
-    except Exception:
+    except jwt.exceptions.InvalidTokenError as e:
+        stack_trace = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+        logger.error(f"JWT validation failed at line {e.__traceback__.tb_lineno}: {str(e)}\n{stack_trace}")
+        await websocket.close(code=1008)  # Policy violation
+        return
+    except Exception as e:
+        stack_trace = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+        logger.error(f"Unexpected error during token validation at line {e.__traceback__.tb_lineno}: {str(e)}\n{stack_trace}")
         await websocket.close(code=1008)
         return
 
@@ -878,36 +928,42 @@ async def websocket_detection(websocket: WebSocket, token: str):
             except WebSocketDisconnect:
                 logger.info("WebSocket disconnected")
                 break
+            except Exception as e:
+                stack_trace = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+                logger.error(f"Error receiving WebSocket message at line {e.__traceback__.tb_lineno}: {str(e)}\n{stack_trace}")
+                break
+
             try:
+                # Decode base64 image
                 img_data = base64.b64decode(data)
                 np_arr = np.frombuffer(img_data, np.uint8)
                 frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
                 if frame is None:
                     await websocket.send_text("Invalid image frame")
+                    logger.warning("Failed to decode image frame")
                     continue
-                embedding = compute_embedding(frame)
+                
+                # Process frame for face detection
+                results = process_frame(frame, db)
+                await websocket.send_text(json.dumps(results))  # Send list as JSON
+            except base64.binascii.Error as e:
+                stack_trace = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+                logger.error(f"Base64 decoding error at line {e.__traceback__.tb_lineno}: {str(e)}\n{stack_trace}")
+                await websocket.send_text(f"Error processing frame: Invalid base64 data")
+                continue
+            except ValueError as e:
+                stack_trace = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+                logger.error(f"Image decoding error at line {e.__traceback__.tb_lineno}: {str(e)}\n{stack_trace}")
+                await websocket.send_text(f"Error processing frame: Invalid image data")
+                continue
             except Exception as e:
+                stack_trace = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+                logger.error(f"Unexpected error processing frame at line {e.__traceback__.tb_lineno}: {str(e)}\n{stack_trace}")
                 await websocket.send_text(f"Error processing frame: {str(e)}")
                 continue
-
-            registered_faces = db.query(RegisteredFace).all()
-            if not registered_faces:
-                result = "No registered faces"
-            else:
-                distances = []
-                for face in registered_faces:
-                    stored_embedding = pickle.loads(face.embedding)
-                    dist = np.linalg.norm(stored_embedding - embedding)
-                    distances.append((face.person_id, dist))
-                best_match = min(distances, key=lambda x: x[1])
-                person_id, min_distance = best_match
-                config_entry = db.query(ConfigEntry).filter(ConfigEntry.key == "TOLERANCE").first()
-                tolerance = float(config_entry.value) if config_entry else float(DEFAULT_CONFIG["TOLERANCE"])
-                result = person_id if min_distance < tolerance else "Unknown"
-                await send_callback(result)
-            await websocket.send_text(result)
     finally:
         db.close()
+        logger.info("Database session closed")
         
 
 # ----------------------------------------------------------------------------------
@@ -1017,115 +1073,170 @@ class RTSPStreamInfo(BaseModel):
         from_attributes = True
 
 # =============================================================================
-#  ENHANCED GLOBAL VARIABLES FOR STREAM MANAGEMENT 
+#   GLOBAL VARIABLES FOR STREAM MANAGEMENT 
 # =============================================================================
 # Dictionary to store active RTSP stream threads
 active_streams: Dict[int, Dict[str, Any]] = {}
 # Thread pool executor for RTSP processing
-executor = ThreadPoolExecutor(max_workers=10)
+executor = ThreadPoolExecutor(max_workers=5)
 
 # =============================================================================
-#  ENHANCED RTSP PROCESSING FUNCTIONS
+#  HELPER FUNCTION FOR DRAWING BOUNDING BOXES
+# =============================================================================
+def draw_bounding_boxes(frame: np.ndarray, results: List[str], db: Session) -> np.ndarray:
+    """
+    Draw bounding boxes and person IDs on the frame for detected faces.
+    
+    Args:
+        frame: Input image in BGR format (OpenCV).
+        results: List of person IDs or "Unknown" for each detected face.
+        db: Database session for configuration.
+    
+    Returns:
+        Frame with bounding boxes and IDs drawn.
+    """
+    # Get face bounding boxes from MTCNN
+    image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    boxes, _ = mtcnn.detect(image_rgb)  # Boxes: List of [x1, y1, x2, y2]
+    
+    if boxes is None or len(boxes) == 0:
+        return frame
+    
+    # Ensure results and boxes align
+    for i, (box, person_id) in enumerate(zip(boxes, results)):
+        x1, y1, x2, y2 = [int(coord) for coord in box]
+        # Draw bounding box
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        # Draw person ID
+        label = person_id if person_id != "Unknown" else "Unknown"
+        cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+    
+    return frame
+
+# =============================================================================
+#  NEW RTSP VIDEO STREAMING ENDPOINT
+# =============================================================================
+def generate_mjpeg_stream(stream_id: int):
+    while True:
+        if stream_id not in active_streams or not active_streams[stream_id].get("running", False):
+            logger.warning(f"Stream {stream_id} not active or stopped")
+            break
+        frame = active_streams[stream_id].get("latest_frame")
+        if frame is None:
+            time.sleep(0.033)
+            continue
+        # Resize frame for streaming to reduce memory/bandwidth
+        stream_frame = cv2.resize(frame, (320, 240))  # Lower resolution for streaming
+        ret, jpeg = cv2.imencode('.jpg', stream_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])  # Lower quality
+        if not ret:
+            logger.warning(f"Failed to encode frame for stream {stream_id}")
+            time.sleep(0.033)
+            continue
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+        del stream_frame  # Clean up
+        gc.collect()  # Force memory cleanup
+        time.sleep(0.033)
+
+# =============================================================================
+#   RTSP PROCESSING FUNCTIONS
 # =============================================================================
 
 def process_rtsp_stream(stream_id: int, rtsp_url: str, stream_name: str):
-    """
-    Process RTSP stream in a separate thread for face detection (similar to webcam).
-    
-    Args:
-        stream_id: Database ID of the RTSP stream
-        rtsp_url: RTSP URL to connect to
-        stream_name: Human-readable name for logging
-    """
     logger.info(f"Starting RTSP stream processing for {stream_name} (ID: {stream_id})")
-    
     cap = cv2.VideoCapture(rtsp_url)
     if not cap.isOpened():
         logger.error(f"Failed to open RTSP stream: {rtsp_url}")
+        if stream_id in active_streams:
+            active_streams[stream_id]["running"] = False
+            del active_streams[stream_id]
         return
-    
-    # Set buffer size to reduce latency
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    # Set frame dimensions for better performance
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffering
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 15)
-    
+    cap.set(cv2.CAP_PROP_FPS, 10)
     db = SessionLocal()
+    processing_lock = threading.Lock()
+    
     try:
-        # Get tolerance from config
-        config_entry = db.query(ConfigEntry).filter(ConfigEntry.key == "TOLERANCE").first()
-        tolerance = float(config_entry.value) if config_entry else float(DEFAULT_CONFIG["TOLERANCE"])
-        
-        # Get registered faces
-        registered_faces = db.query(RegisteredFace).all()
-        
-        last_process_time = 0
-        frame_count = 0
-        
         while stream_id in active_streams and active_streams[stream_id].get("running", False):
-            ret, frame = cap.read()
+            # Clear OpenCV buffer explicitly
+            for _ in range(10):  # Limit to 10 to avoid infinite loop
+                if not cap.grab():
+                    break
+            ret, frame = cap.retrieve()
+            
             if not ret:
-                logger.warning(f"Failed to read frame from {stream_name}")
-                time.sleep(1)
+                logger.warning(f"Failed to read frame from {stream_name}, attempting reconnection...")
+                cap.release()
+                cap = cv2.VideoCapture(rtsp_url)
+                if not cap.isOpened():
+                    logger.error(f"Failed to reconnect to {stream_name}")
+                    break
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                cap.set(cv2.CAP_PROP_FPS, 10)
+                time.sleep(1)  # Allow reconnection to stabilize
                 continue
             
-            current_time = time.time()
-            frame_count += 1
-            
-            # Process every 3rd frame (similar to webcam processing frequency)
-            if frame_count % 3 != 0:
-                continue
-                
-            # Process at maximum 1 frame per second to avoid spam
-            if current_time - last_process_time < 1.0:
-                continue
-                
-            last_process_time = current_time
-                
-            try:
-                # Compute embedding for the frame (same as webcam)
-                embedding = compute_embedding(frame)
-                
-                if registered_faces:
-                    distances = []
-                    for face in registered_faces:
-                        stored_embedding = pickle.loads(face.embedding)
-                        dist = np.linalg.norm(stored_embedding - embedding)
-                        distances.append((face.person_id, dist))
+            if processing_lock.acquire(blocking=False):
+                try:
+                    start_time = time.time()
+                    results = process_frame(frame, db)
+                    annotated_frame = draw_bounding_boxes(frame, results, db)
+                    active_streams[stream_id]["latest_frame"] = annotated_frame.copy()  # Store a copy to avoid reference issues
+                    active_streams[stream_id]["latest_results"] = results
+                    for result in results:
+                        if result not in ["Unknown", "No registered faces"]:
+                            logger.info(f"Face detected in {stream_name}: {result}")
+                            stream_record = db.query(RTSPStream).filter(RTSPStream.id == stream_id).first()
+                            if stream_record:
+                                stream_record.last_detection = datetime.utcnow()
+                                db.commit()
+                            asyncio.run(send_callback(result))
+                    processing_time = time.time() - start_time
+                    if processing_time > 0.2:
+                        logger.warning(f"Slow frame processing: {processing_time:.3f}s for {stream_name}")
                     
-                    best_match = min(distances, key=lambda x: x[1])
-                    person_id, min_distance = best_match
+                    # Explicitly clear memory
+                    del frame
+                    del annotated_frame
+                    gc.collect()  # Force garbage collection
                     
-                    if min_distance < tolerance:
-                        logger.info(f"Face detected in {stream_name}: {person_id} (distance: {min_distance:.3f})")
-                        
-                        # Update last detection time
-                        stream_record = db.query(RTSPStream).filter(RTSPStream.id == stream_id).first()
-                        if stream_record:
-                            stream_record.last_detection = datetime.utcnow()
-                            db.commit()
-                        
-                        # Send callback (same as webcam)
-                        asyncio.run(send_callback(person_id))
-                        
-                        # Add delay after detection to avoid spam (same as webcam)
-                        time.sleep(2)
-                        
-            except Exception as e:
-                logger.warning(f"Error processing frame from {stream_name}: {str(e)}")
-                continue
+                except Exception as e:
+                    logger.error(f"Error processing frame in {stream_name}: {str(e)}")
+                finally:
+                    processing_lock.release()
             
-            # Small delay to prevent excessive CPU usage
-            time.sleep(0.1)
+            # Dynamic sleep to maintain target FPS (e.g., 2-3 FPS for processing)
+            time.sleep(max(0.33 - (time.time() - start_time), 0.01))
             
-            # Cleanup callback records periodically
-            if frame_count % 300 == 0:  # Every 300 frames
-                asyncio.run(cleanup_old_callback_records())
+            # Periodic reconnection check
+            if cap.get(cv2.CAP_PROP_POS_FRAMES) % 300 == 0:
+                if not cap.isOpened():
+                    logger.warning(f"Stream {stream_name} disconnected, attempting reconnection...")
+                    cap.release()
+                    cap = cv2.VideoCapture(rtsp_url)
+                    if cap.isOpened():
+                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                        cap.set(cv2.CAP_PROP_FPS, 10)
+                        logger.info(f"Successfully reconnected to {stream_name}")
+                    else:
+                        logger.error(f"Failed to reconnect to {stream_name}")
+                        break
                 
+    except Exception as e:
+        logger.error(f"Critical error in RTSP stream {stream_name}: {str(e)}")
     finally:
         cap.release()
         db.close()
+        if stream_id in active_streams:
+            active_streams[stream_id]["running"] = False
+            del active_streams[stream_id]
+        gc.collect()  # Final cleanup
         logger.info(f"RTSP stream processing stopped for {stream_name}")
 
 def start_rtsp_stream(stream_id: int, rtsp_url: str, stream_name: str):
@@ -1135,7 +1246,9 @@ def start_rtsp_stream(stream_id: int, rtsp_url: str, stream_name: str):
     
     active_streams[stream_id] = {
         "running": True,
-        "thread": None
+        "thread": None,
+        "latest_frame": None,
+        "latest_results": []
     }
     
     # Start processing in thread pool
@@ -1146,13 +1259,32 @@ def start_rtsp_stream(stream_id: int, rtsp_url: str, stream_name: str):
 
 def stop_rtsp_stream(stream_id: int):
     """Stop RTSP stream processing."""
-    if stream_id in active_streams:
-        active_streams[stream_id]["running"] = False
-        # Wait a moment for graceful shutdown
-        time.sleep(0.5)
+    if stream_id not in active_streams:
+        logger.info(f"Stream {stream_id} not found in active_streams")
+        return False
+
+    # Mark stream as not running
+    active_streams[stream_id]["running"] = False
+    active_streams[stream_id]["latest_frame"] = None
+    active_streams[stream_id]["latest_results"] = []
+
+    # Check if thread exists before accessing
+    thread = active_streams.get(stream_id, {}).get("thread")
+    if thread is not None:
+        try:
+            thread.result(timeout=1.0)  # Wait for thread completion
+        except TimeoutError:
+            logger.warning(f"Thread for stream {stream_id} did not terminate within timeout")
+        except Exception as e:
+            logger.warning(f"Error stopping thread for stream {stream_id}: {str(e)}")
+
+    # Safely remove stream from active_streams
+    if stream_id in active_streams:  # Double-check to avoid race condition
         del active_streams[stream_id]
-        return True
-    return False
+    
+    gc.collect()
+    logger.info(f"Stream {stream_id} stopped successfully")
+    return True
 
 
 # =============================================================================
@@ -1234,23 +1366,29 @@ async def start_rtsp_monitoring(
 @app.post("/rtsp/streams/{stream_id}/stop", summary="Stop RTSP stream monitoring")
 async def stop_rtsp_monitoring(
     stream_id: int,
-    # current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Stop face detection monitoring for an RTSP stream.
     """
+    if stream_id not in active_streams:
+        logger.info(f"Stream {stream_id} not found in active_streams")
+        return True 
+    
     stream = db.query(RTSPStream).filter(RTSPStream.id == stream_id).first()
     if not stream:
         raise HTTPException(status_code=404, detail="RTSP stream not found")
     
-    if stop_rtsp_stream(stream_id):
+    # Update database state first
+    if stream.is_active:
         stream.is_active = False
         db.commit()
+    
+    # Attempt to stop the stream
+    if stop_rtsp_stream(stream_id):
         return {"message": f"Stopped monitoring RTSP stream: {stream.name}"}
     else:
-        return {"message": "Stream was not running"}
-
+        return {"message": f"RTSP stream '{stream.name}' was not running or already stopped"}
 
 @app.delete("/rtsp/streams/{stream_id}", summary="Delete RTSP stream")
 async def delete_rtsp_stream(
@@ -1272,6 +1410,29 @@ async def delete_rtsp_stream(
     db.delete(stream)
     db.commit()
     return {"message": f"RTSP stream '{stream.name}' deleted successfully"}
+
+
+@app.get("/rtsp/streams/{stream_id}/video", summary="Stream RTSP video with bounding boxes")
+async def stream_rtsp_video(stream_id: int):
+    """
+    Stream processed RTSP video with bounding boxes and person IDs drawn on detected faces.
+    
+    Args:
+        stream_id: ID of the RTSP stream to view.
+    
+    Returns:
+        StreamingResponse with MJPEG video.
+    """
+    stream = active_streams.get(stream_id)
+    print(stream_id)
+    print(stream)
+    if not stream or not stream.get("running", False):
+        raise HTTPException(status_code=404, detail="RTSP stream not active or not found")
+    
+    return StreamingResponse(
+        generate_mjpeg_stream(stream_id),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
 
 # =============================================================================
 #  ENHANCED RTSP MANAGEMENT HTML PAGE WITH LIVE PREVIEW

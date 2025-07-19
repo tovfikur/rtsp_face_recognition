@@ -46,19 +46,23 @@
       </header>
       <main>
         <p>Use your webcam for real-time face detection and recognition.</p>
-        
+
         <div class="controls">
-          <button id="startBtn" onclick="startDetection()">Start Detection</button>
-          <button id="stopBtn" onclick="stopDetection()" disabled>Stop Detection</button>
+          <button id="startBtn" onclick="startDetection()">
+            Start Detection
+          </button>
+          <button id="stopBtn" onclick="stopDetection()" disabled>
+            Stop Detection
+          </button>
         </div>
-        
+
         <div class="video-container">
           <video id="video" width="640" height="480" autoplay></video>
           <canvas id="canvas" width="640" height="480"></canvas>
         </div>
-        
+
         <div id="status" class="detection-status"></div>
-        
+
         <div id="detectionLog">
           <h3>Detection Log</h3>
           <ul id="logList"></ul>
@@ -70,140 +74,150 @@
       let socket = null;
       let stream = null;
       let detectionInterval = null;
-      const video = document.getElementById('video');
-      const canvas = document.getElementById('canvas');
-      const ctx = canvas.getContext('2d');
-      const statusDiv = document.getElementById('status');
-      const logList = document.getElementById('logList');
-      
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      const statusDiv = document.getElementById("status");
+      const logList = document.getElementById("logList");
+
       function getCookie(name) {
         const value = `; ${document.cookie}`;
         const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop().split(';').shift();
+        if (parts.length === 2) return parts.pop().split(";").shift();
         return null;
       }
-      
+
       function updateStatus(message, className) {
         statusDiv.textContent = message;
-        statusDiv.className = 'detection-status ' + className;
+        statusDiv.className = "detection-status " + className;
       }
-      
+
       function addLog(message) {
-        const li = document.createElement('li');
-        li.textContent = new Date().toLocaleTimeString() + ' - ' + message;
+        const li = document.createElement("li");
+        li.textContent = new Date().toLocaleTimeString() + " - " + message;
         logList.insertBefore(li, logList.firstChild);
         if (logList.children.length > 10) {
           logList.removeChild(logList.lastChild);
         }
       }
-      
+
       async function startDetection() {
         try {
           // Get webcam access
-          stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { 
-              width: 640, 
-              height: 480 
-            } 
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: 640,
+              height: 480,
+            },
           });
           video.srcObject = stream;
-          
+
           // Connect WebSocket
-          const token = getCookie('token');
+          const token = getCookie("token");
           if (!token) {
-            updateStatus('No authentication token found. Please login.', 'error');
+            updateStatus(
+              "No authentication token found. Please login.",
+              "error"
+            );
             return;
           }
-          
-          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          socket = new WebSocket(`${protocol}//${window.location.host}/ws/detection?token=${token}`);
-          
+
+          const protocol =
+            window.location.protocol === "https:" ? "wss:" : "ws:";
+          socket = new WebSocket(
+            `${protocol}//${window.location.host}/ws/detection?token=${token}`
+          );
+
           socket.onopen = () => {
-            updateStatus('Connected - Detection active', 'success');
-            addLog('WebSocket connected');
-            document.getElementById('startBtn').disabled = true;
-            document.getElementById('stopBtn').disabled = false;
-            
+            updateStatus("Connected - Detection active", "success");
+            addLog("WebSocket connected");
+            document.getElementById("startBtn").disabled = true;
+            document.getElementById("stopBtn").disabled = false;
+
             // Start sending frames
             detectionInterval = setInterval(captureAndSend, 1000); // Send frame every second
           };
-          
+
           socket.onmessage = (event) => {
             const personId = event.data;
-            if (personId === 'unknown') {
-              updateStatus('No face recognized', 'error');
+            if (personId === "unknown") {
+              updateStatus("No face recognized", "error");
             } else {
-              updateStatus(`Recognized: ${personId}`, 'success');
+              updateStatus(`Recognized: ${personId}`, "success");
               addLog(`Face detected: ${personId}`);
             }
           };
-          
+
           socket.onclose = () => {
-            updateStatus('Disconnected', 'error');
-            addLog('WebSocket disconnected');
+            updateStatus("Disconnected", "error");
+            addLog("WebSocket disconnected");
             stopDetection();
           };
-          
+
           socket.onerror = (error) => {
-            updateStatus('Connection error', 'error');
-            addLog('WebSocket error');
-            console.error('WebSocket error:', error);
+            updateStatus("Connection error", "error");
+            addLog("WebSocket error");
+            console.error("WebSocket error:", error);
           };
-          
         } catch (error) {
-          updateStatus('Failed to access webcam: ' + error.message, 'error');
-          console.error('Error:', error);
+          updateStatus("Failed to access webcam: " + error.message, "error");
+          console.error("Error:", error);
         }
       }
-      
+
       function captureAndSend() {
         if (!socket || socket.readyState !== WebSocket.OPEN) return;
-        
+
         // Draw video frame to canvas
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
+
         // Convert to base64 and send
-        canvas.toBlob((blob) => {
-          if (!blob || !socket || socket.readyState !== WebSocket.OPEN) return;
-          
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            if (socket && socket.readyState === WebSocket.OPEN) {
-              const base64data = reader.result.split(',')[1];
-              socket.send(base64data);
-            }
-          };
-          reader.readAsDataURL(blob);
-        }, 'image/jpeg', 0.8);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob || !socket || socket.readyState !== WebSocket.OPEN)
+              return;
+
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              if (socket && socket.readyState === WebSocket.OPEN) {
+                const base64data = reader.result.split(",")[1];
+                socket.send(base64data);
+              }
+            };
+            reader.readAsDataURL(blob);
+          },
+          "image/jpeg",
+          0.8
+        );
       }
-      
+
       function stopDetection() {
         // Stop sending frames
         if (detectionInterval) {
           clearInterval(detectionInterval);
           detectionInterval = null;
         }
-        
+
         // Close WebSocket
         if (socket && socket.readyState === WebSocket.OPEN) {
           socket.close();
         }
-        
+
         // Stop webcam
         if (stream) {
-          stream.getTracks().forEach(track => track.stop());
+          stream.getTracks().forEach((track) => track.stop());
           video.srcObject = null;
           stream = null;
         }
-        
-        document.getElementById('startBtn').disabled = false;
-        document.getElementById('stopBtn').disabled = true;
-        updateStatus('Detection stopped', '');
-        addLog('Detection stopped');
+
+        document.getElementById("startBtn").disabled = false;
+        document.getElementById("stopBtn").disabled = true;
+        updateStatus("Detection stopped", "");
+        addLog("Detection stopped");
       }
-      
+
       // Cleanup on page unload
-      window.addEventListener('beforeunload', () => {
+      window.addEventListener("beforeunload", () => {
         stopDetection();
       });
     </script>
