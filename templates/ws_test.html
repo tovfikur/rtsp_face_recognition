@@ -1,69 +1,245 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WebSocket Test Client</title>
-    <link rel="stylesheet" href="/static/style.css" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css"
+      rel="stylesheet"
+    />
   </head>
-  <body>
-    <div class="container">
-      <header>
-        <h1>WebSocket Test Client</h1>
-        <nav>
-          <a href="/">Dashboard</a>
-          <a href="/rtsp/manage">RTSP Streams</a>
-          <a href="/logout">Logout</a>
-        </nav>
-      </header>
-      <main>
-        <p>Test the WebSocket face detection endpoint by uploading images.</p>
+  <body class="bg-light">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow">
+      <div class="container">
+        <a class="navbar-brand fw-bold" href="/">
+          <i class="bi bi-camera-video-fill me-2"></i>
+          Face Recognition System
+        </a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#navbarNav"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav ms-auto">
+            <li class="nav-item">
+              <a class="nav-link" href="/">
+                <i class="bi bi-speedometer2 me-1"></i>Dashboard
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/rtsp/manage">
+                <i class="bi bi-camera-reels me-1"></i>RTSP Streams
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/logout">
+                <i class="bi bi-box-arrow-right me-1"></i>Logout
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
 
-        <div style="margin-bottom: 20px">
-          <label for="token"
-            >JWT Token (optional - uses cookie if not provided):</label
-          >
-          <input
-            type="text"
-            id="token"
-            placeholder="Enter your JWT token or leave empty to use cookie"
-            style="margin-bottom: 10px"
-          />
+    <div class="container my-5">
+      <!-- Header -->
+      <div class="row mb-4">
+        <div class="col-12">
+          <div class="text-center">
+            <h1 class="display-5 fw-bold text-primary mb-3">
+              <i class="bi bi-plug-fill me-2"></i>
+              WebSocket Test Client
+            </h1>
+            <p class="lead text-muted">
+              Test the WebSocket face detection endpoint by uploading images
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <!-- Connection Panel -->
+        <div class="col-lg-6 mb-4">
+          <div class="card shadow-sm h-100">
+            <div class="card-header bg-primary text-white">
+              <h5 class="card-title mb-0">
+                <i class="bi bi-wifi me-2"></i>
+                Connection Settings
+              </h5>
+            </div>
+            <div class="card-body">
+              <!-- Token Input -->
+              <div class="mb-4">
+                <label for="token" class="form-label fw-semibold">
+                  <i class="bi bi-key me-1"></i>
+                  JWT Token
+                </label>
+                <div class="input-group">
+                  <span class="input-group-text">
+                    <i class="bi bi-shield-lock"></i>
+                  </span>
+                  <input
+                    type="password"
+                    class="form-control"
+                    id="token"
+                    placeholder="Leave empty to use stored cookie"
+                  />
+                  <button
+                    class="btn btn-outline-secondary"
+                    type="button"
+                    onclick="toggleTokenVisibility()"
+                  >
+                    <i class="bi bi-eye" id="tokenToggleIcon"></i>
+                  </button>
+                </div>
+                <div class="form-text">
+                  Optional - uses cookie authentication if not provided
+                </div>
+              </div>
+
+              <!-- Connection Buttons -->
+              <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                <button
+                  id="connectBtn"
+                  class="btn btn-success btn-lg"
+                  onclick="connectWebSocket()"
+                >
+                  <i class="bi bi-plug-fill me-2"></i>
+                  Connect
+                </button>
+                <button
+                  id="disconnectBtn"
+                  class="btn btn-danger btn-lg"
+                  onclick="disconnectWebSocket()"
+                >
+                  <i class="bi bi-x-circle me-2"></i>
+                  Disconnect
+                </button>
+              </div>
+
+              <!-- Connection Status -->
+              <div class="mt-4">
+                <div
+                  id="status"
+                  class="alert alert-secondary text-center"
+                  role="alert"
+                >
+                  <i class="bi bi-circle me-2"></i>
+                  Not connected
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div style="margin-bottom: 20px">
-          <button id="connectBtn" onclick="connectWebSocket()">Connect</button>
-          <button id="disconnectBtn" onclick="disconnectWebSocket()">
-            Disconnect
-          </button>
-        </div>
+        <!-- Image Upload Panel -->
+        <div class="col-lg-6 mb-4">
+          <div class="card shadow-sm h-100">
+            <div class="card-header bg-success text-white">
+              <h5 class="card-title mb-0">
+                <i class="bi bi-image me-2"></i>
+                Image Testing
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="mb-4">
+                <label for="imageFile" class="form-label fw-semibold">
+                  <i class="bi bi-file-image me-1"></i>
+                  Select Image File
+                </label>
+                <input
+                  type="file"
+                  class="form-control form-control-lg"
+                  id="imageFile"
+                  accept="image/*"
+                />
+                <div class="form-text">
+                  Choose an image file for face detection testing
+                </div>
+              </div>
 
-        <div style="margin-bottom: 20px">
-          <label for="messages">Connection Log:</label>
-          <textarea
-            id="messages"
-            cols="100"
-            rows="10"
-            readonly
-            style="width: 100%"
-          ></textarea>
-        </div>
+              <!-- Image Preview -->
+              <div class="text-center mb-4">
+                <img
+                  id="imagePreview"
+                  class="img-thumbnail d-none"
+                  style="max-width: 200px; max-height: 200px"
+                  alt="Image preview"
+                />
+              </div>
 
-        <div style="margin-bottom: 20px">
-          <label for="imageFile">Select Image:</label>
-          <input type="file" id="imageFile" accept="image/*" />
-          <button onclick="sendImage()">Send Image</button>
+              <!-- Send Button -->
+              <div class="d-grid">
+                <button class="btn btn-primary btn-lg" onclick="sendImage()">
+                  <i class="bi bi-send me-2"></i>
+                  Send Image for Detection
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
+      </div>
 
-        <div id="status"></div>
-      </main>
+      <!-- Connection Log -->
+      <div class="row">
+        <div class="col-12">
+          <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white">
+              <h5 class="card-title mb-0">
+                <i class="bi bi-terminal me-2"></i>
+                Connection Log
+              </h5>
+            </div>
+            <div class="card-body">
+              <div
+                class="bg-dark text-light p-3 rounded"
+                style="
+                  height: 300px;
+                  overflow-y: auto;
+                  font-family: 'Courier New', monospace;
+                "
+              >
+                <div id="messages"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
       let socket = null;
 
-      function log(message) {
+      function log(message, type = "info") {
         const messages = document.getElementById("messages");
-        messages.value +=
-          new Date().toLocaleTimeString() + " - " + message + "\n";
+        const timestamp = new Date().toLocaleTimeString();
+
+        const colorMap = {
+          info: "text-info",
+          success: "text-success",
+          error: "text-danger",
+          warning: "text-warning",
+        };
+
+        const color = colorMap[type] || "text-light";
+        const logEntry = document.createElement("div");
+        logEntry.className = color;
+        logEntry.innerHTML = `<span class="text-muted">[${timestamp}]</span> ${message}`;
+
+        messages.appendChild(logEntry);
         messages.scrollTop = messages.scrollHeight;
       }
 
@@ -74,23 +250,62 @@
         return null;
       }
 
+      function updateStatus(message, type) {
+        const statusDiv = document.getElementById("status");
+        const iconMap = {
+          success: "bi-check-circle-fill",
+          error: "bi-x-circle-fill",
+          warning: "bi-exclamation-triangle-fill",
+          info: "bi-info-circle-fill",
+        };
+
+        const alertMap = {
+          success: "alert-success",
+          error: "alert-danger",
+          warning: "alert-warning",
+          info: "alert-info",
+        };
+
+        const icon = iconMap[type] || "bi-circle";
+        const alertClass = alertMap[type] || "alert-secondary";
+
+        statusDiv.className = `alert ${alertClass} text-center`;
+        statusDiv.innerHTML = `<i class="${icon} me-2"></i>${message}`;
+      }
+
+      function toggleTokenVisibility() {
+        const tokenInput = document.getElementById("token");
+        const toggleIcon = document.getElementById("tokenToggleIcon");
+
+        if (tokenInput.type === "password") {
+          tokenInput.type = "text";
+          toggleIcon.className = "bi bi-eye-slash";
+        } else {
+          tokenInput.type = "password";
+          toggleIcon.className = "bi bi-eye";
+        }
+      }
+
       function connectWebSocket() {
         const tokenInput = document.getElementById("token");
         const token = tokenInput.value.trim() || getCookie("token");
-        const statusDiv = document.getElementById("status");
 
         if (!token) {
-          statusDiv.textContent =
-            "No token found. Please login or provide a token.";
-          statusDiv.className = "error";
+          updateStatus(
+            "No token found. Please login or provide a token.",
+            "error"
+          );
+          log("Connection failed: No authentication token", "error");
           return;
         }
 
         if (socket && socket.readyState === WebSocket.OPEN) {
-          statusDiv.textContent = "Already connected!";
-          statusDiv.className = "error";
+          updateStatus("Already connected!", "warning");
           return;
         }
+
+        updateStatus("Connecting...", "info");
+        log("Attempting to connect to WebSocket...", "info");
 
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         socket = new WebSocket(
@@ -98,49 +313,59 @@
         );
 
         socket.onopen = () => {
-          log("WebSocket connected successfully");
-          statusDiv.textContent = "Connected to WebSocket";
-          statusDiv.className = "success";
+          log("WebSocket connected successfully", "success");
+          updateStatus("Connected to WebSocket", "success");
           document.getElementById("connectBtn").disabled = true;
           document.getElementById("disconnectBtn").disabled = false;
         };
 
         socket.onmessage = (event) => {
-          log("Received: " + event.data);
-          statusDiv.textContent = `Detection result: ${event.data}`;
-          statusDiv.className = event.data === "unknown" ? "error" : "success";
+          log(`Detection result: ${event.data}`, "success");
+
+          try {
+            const results = JSON.parse(event.data);
+            if (Array.isArray(results)) {
+              updateStatus(
+                `Detection completed: ${results.length} face(s) processed`,
+                "success"
+              );
+            } else {
+              updateStatus(`Detection result: ${event.data}`, "success");
+            }
+          } catch (e) {
+            updateStatus(`Detection result: ${event.data}`, "success");
+          }
         };
 
         socket.onclose = () => {
-          log("WebSocket disconnected");
-          statusDiv.textContent = "Disconnected from WebSocket";
-          statusDiv.className = "error";
+          log("WebSocket disconnected", "warning");
+          updateStatus("Disconnected from WebSocket", "error");
           socket = null;
           document.getElementById("connectBtn").disabled = false;
           document.getElementById("disconnectBtn").disabled = true;
         };
 
         socket.onerror = (error) => {
-          log("WebSocket error occurred");
-          statusDiv.textContent = "WebSocket connection error";
-          statusDiv.className = "error";
+          log("WebSocket error occurred", "error");
+          updateStatus("WebSocket connection error", "error");
+          console.error("WebSocket error:", error);
         };
       }
 
       function disconnectWebSocket() {
         if (socket && socket.readyState === WebSocket.OPEN) {
           socket.close();
-          log("Disconnecting WebSocket...");
+          log("Disconnecting WebSocket...", "info");
         }
       }
 
       function sendImage() {
-        const statusDiv = document.getElementById("status");
-
         if (!socket || socket.readyState !== WebSocket.OPEN) {
-          statusDiv.textContent =
-            "WebSocket not connected. Please connect first.";
-          statusDiv.className = "error";
+          updateStatus(
+            "WebSocket not connected. Please connect first.",
+            "error"
+          );
+          log("Send failed: WebSocket not connected", "error");
           return;
         }
 
@@ -148,25 +373,53 @@
         const file = fileInput.files[0];
 
         if (!file) {
-          statusDiv.textContent = "Please select an image file";
-          statusDiv.className = "error";
+          updateStatus("Please select an image file", "warning");
+          log("Send failed: No image selected", "warning");
           return;
         }
+
+        updateStatus("Sending image for detection...", "info");
+        log(
+          `Sending image: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
+          "info"
+        );
 
         const reader = new FileReader();
         reader.onload = () => {
           const base64Data = reader.result.split(",")[1];
           socket.send(base64Data);
-          log("Image sent for detection");
-          statusDiv.textContent = "Image sent, waiting for detection result...";
-          statusDiv.className = "";
+          log(
+            "Image sent successfully, waiting for detection result...",
+            "info"
+          );
+          updateStatus("Image sent, waiting for detection result...", "info");
         };
         reader.readAsDataURL(file);
       }
 
+      // Image preview functionality
+      document
+        .getElementById("imageFile")
+        .addEventListener("change", function (event) {
+          const file = event.target.files[0];
+          const preview = document.getElementById("imagePreview");
+
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+              preview.src = e.target.result;
+              preview.classList.remove("d-none");
+            };
+            reader.readAsDataURL(file);
+          } else {
+            preview.classList.add("d-none");
+          }
+        });
+
       // Initial button states
       document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("disconnectBtn").disabled = true;
+        log("WebSocket Test Client initialized", "info");
       });
     </script>
   </body>
